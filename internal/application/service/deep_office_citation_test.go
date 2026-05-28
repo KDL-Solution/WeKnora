@@ -321,6 +321,150 @@ func TestEnrichDeepOfficeCitationsFromChunkMetadataWithoutEnv(t *testing.T) {
 	}
 }
 
+func TestEnrichDeepOfficeCitationsFromChunkMetadataWhenBindingsFileMissing(t *testing.T) {
+	t.Setenv(deepOfficeEvidenceBindingsEnv, filepath.Join(t.TempDir(), "missing-evidence-bindings.json"))
+	resetDeepOfficeCitationStoreForTest()
+	t.Cleanup(resetDeepOfficeCitationStoreForTest)
+
+	chunkMetadata := mustJSON(t, map[string]interface{}{
+		deepOfficeChunkMetadataKey: map[string]interface{}{
+			"knowledge_id":      "knowledge-1",
+			"knowledge_base_id": "kb-1",
+			"weknora_chunk_id":  "chunk-1",
+			"source_document": map[string]interface{}{
+				"title":       "업로드 문서",
+				"uri":         "nas://manual/upload.pdf",
+				"checksum":    "sha256:document",
+				"source_type": "nas_document",
+			},
+			"source_locator": map[string]interface{}{"start_at": 0, "end_at": 20},
+			"parser_grounding": map[string]interface{}{
+				"parser_provider": "deep_parser",
+				"parser_run_id":   "run-inline",
+				"elements": []map[string]interface{}{
+					{"element_id": "p1-e1", "page": 1, "bbox": []float64{0.1, 0.2, 0.3, 0.4}},
+				},
+			},
+		},
+	})
+
+	result := &types.SearchResult{
+		ID:              "chunk-1",
+		Content:         "BMT 인식정확도 평가",
+		KnowledgeID:     "knowledge-1",
+		KnowledgeBaseID: "kb-1",
+		ChunkMetadata:   chunkMetadata,
+	}
+	enrichDeepOfficeCitations(context.Background(), []*types.SearchResult{result})
+
+	card := result.DeepOfficeCitation
+	if card == nil {
+		t.Fatal("expected citation card from inline metadata despite missing bindings file")
+	}
+	if got := card["evidence_status"]; got != "complete" {
+		t.Fatalf("expected complete evidence status, got %v", got)
+	}
+}
+
+func TestAddDeepOfficeChunkBindingsCompletesMergedInlineSubChunks(t *testing.T) {
+	store := &deepOfficeCitationStore{byChunkID: map[string]*deepOfficeEvidenceBinding{}}
+
+	titleMetadata := mustJSON(t, map[string]interface{}{
+		deepOfficeChunkMetadataKey: map[string]interface{}{
+			"knowledge_id":      "knowledge-1",
+			"knowledge_base_id": "kb-1",
+			"weknora_chunk_id":  "chunk-title",
+			"chunk_index":       0,
+			"source_document": map[string]interface{}{
+				"title":       "BMT 설명회 자료",
+				"uri":         "local://bmt.pdf",
+				"source_type": "nas_document",
+			},
+			"source_locator": map[string]interface{}{"start_at": 0, "end_at": 23, "chunk_index": 0},
+			"parser_grounding": map[string]interface{}{
+				"parser_provider": "deep_parser",
+				"elements":        []map[string]interface{}{},
+			},
+		},
+	})
+	bodyMetadata := mustJSON(t, map[string]interface{}{
+		deepOfficeChunkMetadataKey: map[string]interface{}{
+			"knowledge_id":      "knowledge-1",
+			"knowledge_base_id": "kb-1",
+			"weknora_chunk_id":  "chunk-body",
+			"chunk_index":       1,
+			"source_document": map[string]interface{}{
+				"title":       "BMT 설명회 자료",
+				"uri":         "local://bmt.pdf",
+				"source_type": "nas_document",
+			},
+			"source_locator": map[string]interface{}{"start_at": 23, "end_at": 128, "chunk_index": 1},
+			"parser_grounding": map[string]interface{}{
+				"parser_provider": "deep_parser",
+				"elements": []map[string]interface{}{
+					{
+						"element_id":   "p1-e1",
+						"page":         1,
+						"layout_order": 0,
+						"bbox":         []float64{0.1, 0.2, 0.3, 0.4},
+					},
+				},
+			},
+		},
+	})
+
+	addDeepOfficeChunkBindings(store, []*types.Chunk{
+		{
+			ID:              "chunk-title",
+			KnowledgeID:     "knowledge-1",
+			KnowledgeBaseID: "kb-1",
+			ChunkIndex:      0,
+			ChunkType:       types.ChunkTypeText,
+			Metadata:        titleMetadata,
+		},
+		{
+			ID:              "chunk-body",
+			KnowledgeID:     "knowledge-1",
+			KnowledgeBaseID: "kb-1",
+			Content:         "BMT 수행 TASK 설명",
+			ChunkIndex:      1,
+			ChunkType:       types.ChunkTypeText,
+			Metadata:        bodyMetadata,
+		},
+	})
+
+	result := &types.SearchResult{
+		ID:              "chunk-title",
+		SubChunkID:      []string{"chunk-body"},
+		KnowledgeID:     "knowledge-1",
+		KnowledgeBaseID: "kb-1",
+	}
+	card := store.cardForResult(result)
+	if card == nil {
+		t.Fatal("expected citation card")
+	}
+	if got := card["evidence_status"]; got != "complete" {
+		t.Fatalf("expected complete evidence status, got %v", got)
+	}
+	sourceLocator := card["source_locator"].(map[string]interface{})
+	if got, ok := intFromInterface(sourceLocator["end_at"]); !ok || got != 128 {
+		t.Fatalf("expected merged source locator end_at 128, got %v", sourceLocator["end_at"])
+	}
+	parserGrounding := card["parser_grounding"].(map[string]interface{})
+	elements := parserGrounding["elements"].([]map[string]interface{})
+	if len(elements) != 1 {
+		t.Fatalf("expected subchunk parser element to be merged, got %d", len(elements))
+	}
+	bboxes := parserGrounding["bboxes"].([]map[string]interface{})
+	if len(bboxes) != 1 {
+		t.Fatalf("expected subchunk bbox to be merged, got %d", len(bboxes))
+	}
+	chunkEvidence := card["chunk_evidence"].([]map[string]interface{})
+	if len(chunkEvidence) != 2 {
+		t.Fatalf("expected two chunk evidence rows, got %d", len(chunkEvidence))
+	}
+}
+
 func TestBuildDeepOfficeChunkMetadataMapsGroundingRange(t *testing.T) {
 	knowledge := &types.Knowledge{
 		ID:              "knowledge-1",

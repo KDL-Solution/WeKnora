@@ -12,6 +12,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 const deepOfficeEvidenceBindingsEnv = "DEEP_OFFICE_EVIDENCE_BINDINGS_PATH"
@@ -54,13 +55,37 @@ func enrichDeepOfficeCitations(ctx context.Context, results []*types.SearchResul
 		return
 	}
 
+	store := deepOfficeCitationStoreForRequest(ctx)
+	enrichDeepOfficeCitationsWithStore(results, store)
+}
+
+func enrichDeepOfficeCitationsWithChunkRepository(
+	ctx context.Context,
+	results []*types.SearchResult,
+	chunkRepo interfaces.ChunkRepository,
+	tenantID uint64,
+) {
+	if len(results) == 0 {
+		return
+	}
+
+	store := deepOfficeCitationStoreForRequest(ctx)
+	hydrateDeepOfficeCitationStoreFromChunks(ctx, store, results, chunkRepo, tenantID)
+	enrichDeepOfficeCitationsWithStore(results, store)
+}
+
+func deepOfficeCitationStoreForRequest(ctx context.Context) *deepOfficeCitationStore {
 	store, err := getDeepOfficeCitationStore()
 	if err != nil {
 		logger.Warnf(ctx, "Deep Office evidence bindings load failed: %v", err)
-		return
+		store = nil
 	}
-	if store == nil || len(store.byChunkID) == 0 {
-		store = &deepOfficeCitationStore{byChunkID: map[string]*deepOfficeEvidenceBinding{}}
+	return cloneDeepOfficeCitationStore(store)
+}
+
+func enrichDeepOfficeCitationsWithStore(results []*types.SearchResult, store *deepOfficeCitationStore) {
+	if store == nil {
+		return
 	}
 
 	for _, result := range results {
@@ -72,6 +97,21 @@ func enrichDeepOfficeCitations(ctx context.Context, results []*types.SearchResul
 			result.DeepOfficeCitation = card
 		}
 	}
+}
+
+func cloneDeepOfficeCitationStore(source *deepOfficeCitationStore) *deepOfficeCitationStore {
+	out := &deepOfficeCitationStore{byChunkID: map[string]*deepOfficeEvidenceBinding{}}
+	if source == nil {
+		return out
+	}
+	for chunkID, binding := range source.byChunkID {
+		if chunkID == "" || binding == nil {
+			continue
+		}
+		copied := *binding
+		out.byChunkID[chunkID] = &copied
+	}
+	return out
 }
 
 func getDeepOfficeCitationStore() (*deepOfficeCitationStore, error) {
@@ -106,6 +146,62 @@ func loadDeepOfficeCitationStore() (*deepOfficeCitationStore, error) {
 		store.byChunkID[binding.WeknoraChunkID] = binding
 	}
 	return store, nil
+}
+
+func hydrateDeepOfficeCitationStoreFromChunks(
+	ctx context.Context,
+	store *deepOfficeCitationStore,
+	results []*types.SearchResult,
+	chunkRepo interfaces.ChunkRepository,
+	tenantID uint64,
+) {
+	if store == nil || chunkRepo == nil || tenantID == 0 {
+		return
+	}
+
+	var ids []string
+	seen := make(map[string]struct{})
+	for _, result := range results {
+		for _, id := range orderedReferenceChunkIDs(result) {
+			if id == "" {
+				continue
+			}
+			if _, exists := store.byChunkID[id]; exists {
+				continue
+			}
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	chunks, err := chunkRepo.ListChunksByID(ctx, tenantID, ids)
+	if err != nil {
+		logger.Warnf(ctx, "Deep Office chunk evidence hydrate failed: %v", err)
+		return
+	}
+	addDeepOfficeChunkBindings(store, chunks)
+}
+
+func addDeepOfficeChunkBindings(store *deepOfficeCitationStore, chunks []*types.Chunk) {
+	if store == nil {
+		return
+	}
+	if store.byChunkID == nil {
+		store.byChunkID = map[string]*deepOfficeEvidenceBinding{}
+	}
+	for _, chunk := range chunks {
+		binding, ok := deepOfficeBindingFromChunkMetadata(chunk)
+		if !ok || binding.WeknoraChunkID == "" {
+			continue
+		}
+		store.byChunkID[binding.WeknoraChunkID] = binding
+	}
 }
 
 func (s *deepOfficeCitationStore) cardForResult(result *types.SearchResult) map[string]interface{} {
@@ -255,6 +351,22 @@ func deepOfficeBindingFromResultChunkMetadata(result *types.SearchResult) (*deep
 		)
 	}
 	return &binding, deepOfficeBindingMatchesResult(&binding, result)
+}
+
+func deepOfficeBindingFromChunkMetadata(chunk *types.Chunk) (*deepOfficeEvidenceBinding, bool) {
+	if chunk == nil || len(chunk.Metadata) == 0 {
+		return nil, false
+	}
+	return deepOfficeBindingFromResultChunkMetadata(&types.SearchResult{
+		ID:              chunk.ID,
+		Content:         chunk.Content,
+		KnowledgeID:     chunk.KnowledgeID,
+		KnowledgeBaseID: chunk.KnowledgeBaseID,
+		ChunkIndex:      chunk.ChunkIndex,
+		ChunkType:       string(chunk.ChunkType),
+		ParentChunkID:   chunk.ParentChunkID,
+		ChunkMetadata:   chunk.Metadata,
+	})
 }
 
 func deriveDeepOfficeBindingFromParent(
