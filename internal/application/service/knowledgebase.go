@@ -105,6 +105,9 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		kb.CreatorID = uid
 	}
 	kb.EnsureDefaults()
+	if kb.Type == types.KnowledgeBaseTypeDocument && len(kb.ChunkingConfig.ParserEngineRules) == 0 {
+		kb.ChunkingConfig.ParserEngineRules = types.DefaultDeepOfficeParserEngineRules()
+	}
 
 	// Fold empty-string vector_store_id into nil so this path and the
 	// retrieve-engine factory's pre-condition share a single representation.

@@ -142,6 +142,177 @@ type ProcessChunksOptions struct {
 	Metadata     map[string]string
 }
 
+func buildDeepOfficeChunkMetadata(
+	metadata map[string]string,
+	knowledge *types.Knowledge,
+	chunk *types.Chunk,
+) types.JSON {
+	if chunk == nil || knowledge == nil || !hasDeepOfficeDocReaderMetadata(metadata) {
+		return nil
+	}
+
+	chunkTextHash := deepOfficeHashText(chunk.Content)
+	binding := deepOfficeEvidenceBinding{
+		BindingID: deepOfficeBindingID(
+			fmt.Sprintf("%d", chunk.TenantID),
+			chunk.KnowledgeBaseID,
+			chunk.KnowledgeID,
+			chunk.ID,
+			fmt.Sprintf("%d", chunk.ChunkIndex),
+			chunkTextHash,
+		),
+		TenantID:        fmt.Sprintf("%d", chunk.TenantID),
+		KnowledgeBaseID: chunk.KnowledgeBaseID,
+		KnowledgeID:     chunk.KnowledgeID,
+		WeknoraChunkID:  chunk.ID,
+		ChunkVersion:    1,
+		ChunkIndex:      chunk.ChunkIndex,
+		SourceDocument: map[string]interface{}{
+			"document_id": deepOfficeFirstString(
+				metadata["override_record_id"],
+				metadata["record_id"],
+				metadata["deep_parser_document_id"],
+				knowledge.FileHash,
+				knowledge.ID,
+			),
+			"title": deepOfficeFirstString(
+				metadata["source_title"],
+				metadata["override_title"],
+				knowledge.Title,
+				knowledge.FileName,
+			),
+			"uri": deepOfficeFirstString(
+				metadata["source_uri"],
+				metadata["override_source_uri"],
+				knowledge.Source,
+				knowledge.FilePath,
+			),
+			"source_type": deepOfficeFirstString(
+				metadata["source_type"],
+				metadata["override_source_type"],
+				"nas_document",
+			),
+			"updated_at": deepOfficeFirstString(
+				metadata["source_updated_at"],
+				metadata["override_updated_at"],
+				deepOfficeKnowledgeUpdatedAt(knowledge),
+			),
+			"visibility": deepOfficeFirstString(metadata["visibility"], metadata["override_visibility"]),
+			"owner":      deepOfficeFirstString(metadata["owner"], metadata["override_owner"], metadata["override_author_or_owner"]),
+			"checksum":   deepOfficeFirstString(metadata["file_content_sha256"], metadata["checksum"], knowledge.FileHash),
+		},
+		SourceLocator: map[string]interface{}{
+			"start_at":        chunk.StartAt,
+			"end_at":          chunk.EndAt,
+			"chunk_index":     chunk.ChunkIndex,
+			"chunk_type":      chunk.ChunkType,
+			"parent_chunk_id": chunk.ParentChunkID,
+		},
+		ParserGrounding: map[string]interface{}{
+			"parser_provider": deepOfficeFirstString(
+				metadata["deep_parser_provider"],
+				metadata["parser_engine"],
+				"deep_parser",
+			),
+			"parser_run_id": deepOfficeFirstString(metadata["parser_run_id"], metadata["request_id"]),
+			"elements":      deepOfficeGroundingsForRange(metadata["grounding_map"], chunk.StartAt, chunk.EndAt),
+		},
+		SourceTextHash: chunkTextHash,
+		ChunkTextHash:  chunkTextHash,
+	}
+
+	raw, err := json.Marshal(map[string]interface{}{deepOfficeChunkMetadataKey: binding})
+	if err != nil {
+		return nil
+	}
+	return types.JSON(raw)
+}
+
+func buildDeepOfficeDerivedChunkMetadata(parent *types.Chunk, derived *types.Chunk) types.JSON {
+	if parent == nil || derived == nil || len(parent.Metadata) == 0 {
+		return nil
+	}
+	metadata, err := parent.Metadata.Map()
+	if err != nil {
+		return nil
+	}
+	rawEvidence, ok := metadata[deepOfficeChunkMetadataKey]
+	if !ok {
+		return nil
+	}
+	raw, err := json.Marshal(rawEvidence)
+	if err != nil {
+		return nil
+	}
+	var parentBinding deepOfficeEvidenceBinding
+	if err := json.Unmarshal(raw, &parentBinding); err != nil {
+		return nil
+	}
+	binding := deriveDeepOfficeBindingFromParent(
+		&parentBinding,
+		derived.ID,
+		derived.Content,
+		derived.ChunkIndex,
+		derived.ChunkType,
+		derived.ParentChunkID,
+		derived.KnowledgeID,
+		derived.KnowledgeBaseID,
+	)
+	if binding == nil {
+		return nil
+	}
+	out, err := json.Marshal(map[string]interface{}{deepOfficeChunkMetadataKey: binding})
+	if err != nil {
+		return nil
+	}
+	return types.JSON(out)
+}
+
+func hasDeepOfficeDocReaderMetadata(metadata map[string]string) bool {
+	return metadata != nil &&
+		(metadata["docreader_adapter"] != "" ||
+			metadata["grounding_map"] != "" ||
+			metadata["deep_parser_provider"] != "")
+}
+
+func deepOfficeGroundingsForRange(raw string, start int, end int) []map[string]interface{} {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var groundings []map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &groundings); err != nil {
+		return nil
+	}
+	matched := make([]map[string]interface{}, 0)
+	for _, grounding := range groundings {
+		elementStart, hasStart := intFromInterface(grounding["char_start"])
+		elementEnd, hasEnd := intFromInterface(grounding["char_end"])
+		if !hasStart || !hasEnd {
+			continue
+		}
+		if elementStart < end && elementEnd > start {
+			matched = append(matched, grounding)
+		}
+	}
+	return matched
+}
+
+func deepOfficeFirstString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func deepOfficeKnowledgeUpdatedAt(knowledge *types.Knowledge) string {
+	if knowledge == nil || knowledge.UpdatedAt.IsZero() {
+		return ""
+	}
+	return knowledge.UpdatedAt.UTC().Format(time.RFC3339)
+}
+
 // finalizeIndexedKnowledgeState marks a document searchable as soon as chunks
 // and indexes are persisted; post-processing tasks should not keep parsing UI
 // indicators alive once retrieval can use the document.
@@ -420,6 +591,9 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		// Wire up ParentChunkID for child chunks
 		if hasParentChild && chunkData.ParentIndex >= 0 && chunkData.ParentIndex < len(parentDBChunks) {
 			textChunk.ParentChunkID = parentDBChunks[chunkData.ParentIndex].ID
+		}
+		if metadata := buildDeepOfficeChunkMetadata(options.Metadata, knowledge, textChunk); len(metadata) > 0 {
+			textChunk.Metadata = metadata
 		}
 
 		chunks[idx].ChunkID = textChunk.ID
@@ -965,6 +1139,9 @@ func (s *knowledgeService) ProcessSummaryGeneration(ctx context.Context, t *asyn
 			EndAt:           0,
 			ChunkType:       types.ChunkTypeSummary,
 			ParentChunkID:   textChunks[0].ID,
+		}
+		if metadata := buildDeepOfficeDerivedChunkMetadata(textChunks[0], summaryChunk); len(metadata) > 0 {
+			summaryChunk.Metadata = metadata
 		}
 
 		// Save summary chunk

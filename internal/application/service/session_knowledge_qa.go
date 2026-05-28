@@ -218,6 +218,7 @@ func (s *sessionService) KnowledgeQA(
 
 	// Emit references event if we have search results
 	if len(chatManage.MergeResult) > 0 {
+		enrichDeepOfficeCitations(ctx, chatManage.MergeResult)
 		logger.Infof(ctx, "Emitting references event with %d results", len(chatManage.MergeResult))
 		if err := eventBus.Emit(ctx, event.Event{
 			ID:        generateEventID("references"),

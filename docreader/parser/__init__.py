@@ -15,20 +15,25 @@ meaningful chunks for further processing and indexing.
 
 from .doc_parser import DocParser
 from .docx2_parser import Docx2Parser
+from .deep_parser_parser import DeepParserParser
 from .excel_parser import ExcelParser
 from .image_parser import ImageParser
 from .markdown_parser import MarkdownParser
 from .parser import Parser
 from .pdf_parser import PDFParser
 from .registry import ParserEngineRegistry, registry
+from .text_parser import CSVParser, TextParser
 from .web_parser import WebParser
 
 # Export public classes and modules
 __all__ = [
     "Docx2Parser",
     "DocParser",
+    "DeepParserParser",
     "PDFParser",
     "MarkdownParser",
+    "TextParser",
+    "CSVParser",
     "ImageParser",
     "WebParser",
     "Parser",

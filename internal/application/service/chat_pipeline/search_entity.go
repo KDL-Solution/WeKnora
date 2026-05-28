@@ -2,6 +2,8 @@ package chatpipeline
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -133,6 +135,7 @@ func (p *PluginSearchEntity) OnEvent(ctx context.Context,
 		Relation: allRelations,
 	}
 	logger.Infof(ctx, "Total entity search result: %d nodes, %d relations", len(allNodes), len(allRelations))
+	graphEvidenceByChunkID := buildGraphEvidenceByChunkID(chatManage.Entity, chatManage.GraphResult)
 
 	chunkIDs := filterSeenChunk(ctx, chatManage.GraphResult, chatManage.SearchResult)
 	if len(chunkIDs) == 0 {
@@ -165,6 +168,9 @@ func (p *PluginSearchEntity) OnEvent(ctx context.Context,
 	var entityResults []*types.SearchResult
 	for _, chunk := range chunks {
 		searchResult := chunk2SearchResult(chunk, knowledgeMap[chunk.KnowledgeID])
+		if evidence := graphEvidenceByChunkID[chunk.ID]; len(evidence) > 0 {
+			searchResult.GraphEvidence = evidence
+		}
 		entityResults = append(entityResults, searchResult)
 	}
 	searchutil.EnrichSearchResultsImageInfo(ctx, p.chunkRepo, types.MustTenantIDFromContext(ctx), entityResults)
@@ -229,4 +235,192 @@ func chunk2SearchResult(chunk *types.Chunk, knowledge *types.Knowledge) *types.S
 		ChunkMetadata:     chunk.Metadata,
 		KnowledgeBaseID:   knowledge.KnowledgeBaseID,
 	}
+}
+
+func buildGraphEvidenceByChunkID(queryEntities []string, graph *types.GraphData) map[string]map[string]interface{} {
+	if graph == nil || len(graph.Node) == 0 {
+		return nil
+	}
+
+	nodeByName := make(map[string]*types.GraphNode)
+	chunkToNodeNames := make(map[string]map[string]struct{})
+	for _, node := range graph.Node {
+		if node == nil || node.Name == "" {
+			continue
+		}
+		nodeByName[node.Name] = node
+		for _, chunkID := range node.Chunks {
+			if chunkID == "" {
+				continue
+			}
+			if _, ok := chunkToNodeNames[chunkID]; !ok {
+				chunkToNodeNames[chunkID] = make(map[string]struct{})
+			}
+			chunkToNodeNames[chunkID][node.Name] = struct{}{}
+		}
+	}
+	if len(chunkToNodeNames) == 0 {
+		return nil
+	}
+
+	out := make(map[string]map[string]interface{}, len(chunkToNodeNames))
+	for chunkID, nodeNames := range chunkToNodeNames {
+		matchedNodes := graphEvidenceNodes(nodeNames, nodeByName)
+		relationships := graphEvidenceRelations(nodeNames, graph.Relation)
+		supportChunkIDs := graphEvidenceSupportChunkIDs(nodeNames, relationships, nodeByName)
+
+		out[chunkID] = map[string]interface{}{
+			"match_type":        "graph",
+			"query_entities":    uniqueStrings(queryEntities),
+			"source_chunk_id":   chunkID,
+			"matched_nodes":     matchedNodes,
+			"relationships":     relationships,
+			"paths":             graphEvidencePaths(relationships),
+			"support_chunk_ids": supportChunkIDs,
+		}
+	}
+	return out
+}
+
+func graphEvidenceNodes(
+	nodeNames map[string]struct{},
+	nodeByName map[string]*types.GraphNode,
+) []map[string]interface{} {
+	names := sortedSetKeys(nodeNames)
+	nodes := make([]map[string]interface{}, 0, len(names))
+	for _, name := range names {
+		node := nodeByName[name]
+		if node == nil {
+			continue
+		}
+		nodes = append(nodes, map[string]interface{}{
+			"name":              node.Name,
+			"attributes":        uniqueStrings(node.Attributes),
+			"support_chunk_ids": uniqueStrings(node.Chunks),
+		})
+	}
+	return nodes
+}
+
+func graphEvidenceRelations(
+	nodeNames map[string]struct{},
+	relations []*types.GraphRelation,
+) []map[string]interface{} {
+	seen := make(map[string]struct{})
+	items := make([]map[string]interface{}, 0)
+	for _, rel := range relations {
+		if rel == nil || rel.Node1 == "" || rel.Node2 == "" {
+			continue
+		}
+		if _, ok := nodeNames[rel.Node1]; !ok {
+			if _, ok := nodeNames[rel.Node2]; !ok {
+				continue
+			}
+		}
+		key := rel.Node1 + "\x00" + rel.Type + "\x00" + rel.Node2
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		items = append(items, map[string]interface{}{
+			"source":   rel.Node1,
+			"relation": rel.Type,
+			"target":   rel.Node2,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return graphRelationSortKey(items[i]) < graphRelationSortKey(items[j])
+	})
+	return items
+}
+
+func graphEvidencePaths(relations []map[string]interface{}) []map[string]interface{} {
+	paths := make([]map[string]interface{}, 0, len(relations))
+	for _, rel := range relations {
+		source, _ := rel["source"].(string)
+		relation, _ := rel["relation"].(string)
+		target, _ := rel["target"].(string)
+		if source == "" || target == "" {
+			continue
+		}
+		paths = append(paths, map[string]interface{}{
+			"path": []map[string]string{
+				{"node": source},
+				{"relation": relation},
+				{"node": target},
+			},
+		})
+	}
+	return paths
+}
+
+func graphEvidenceSupportChunkIDs(
+	nodeNames map[string]struct{},
+	relations []map[string]interface{},
+	nodeByName map[string]*types.GraphNode,
+) []string {
+	relatedNodeNames := make(map[string]struct{}, len(nodeNames))
+	for name := range nodeNames {
+		relatedNodeNames[name] = struct{}{}
+	}
+	for _, rel := range relations {
+		if source, _ := rel["source"].(string); source != "" {
+			relatedNodeNames[source] = struct{}{}
+		}
+		if target, _ := rel["target"].(string); target != "" {
+			relatedNodeNames[target] = struct{}{}
+		}
+	}
+
+	seen := make(map[string]struct{})
+	for _, name := range sortedSetKeys(relatedNodeNames) {
+		node := nodeByName[name]
+		if node == nil {
+			continue
+		}
+		for _, chunkID := range node.Chunks {
+			if chunkID != "" {
+				seen[chunkID] = struct{}{}
+			}
+		}
+	}
+	return sortedSetKeys(seen)
+}
+
+func graphRelationSortKey(item map[string]interface{}) string {
+	return strings.Join([]string{
+		stringFromMap(item, "source"),
+		stringFromMap(item, "relation"),
+		stringFromMap(item, "target"),
+	}, "\x00")
+}
+
+func stringFromMap(item map[string]interface{}, key string) string {
+	value, _ := item[key].(string)
+	return value
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func sortedSetKeys(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for value := range set {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }

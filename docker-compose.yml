@@ -39,6 +39,10 @@ services:
       - data-files:/data/files
       - docreader-tmp:/tmp/docreader:ro
       - ./config/config.yaml:/app/config/config.yaml
+      - ./config/builtin_agents.yaml:/app/config/builtin_agents.yaml:ro
+      - ./config/agent_type_presets.yaml:/app/config/agent_type_presets.yaml:ro
+      - ./config/prompt_templates/agent_system_prompt.yaml:/app/config/prompt_templates/agent_system_prompt.yaml:ro
+      - ../../../.artifacts/weknora-ui-demo/evidence-bindings.json:/app/deep-office/evidence-bindings.json:ro
       # Optional: mount custom skills directory (allows adding skills without rebuilding image)
       - ./skills/preloaded:/app/skills/preloaded
     healthcheck:
@@ -65,7 +69,8 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:-}
       - DB_NAME=${DB_NAME:-}
       - TZ=${TZ:-Asia/Shanghai}
-      - WEKNORA_LANGUAGE=${WEKNORA_LANGUAGE:-zh-CN}
+      - WEKNORA_LANGUAGE=${WEKNORA_LANGUAGE:-ko-KR}
+      - DEEP_OFFICE_EVIDENCE_BINDINGS_PATH=${DEEP_OFFICE_EVIDENCE_BINDINGS_PATH:-/app/deep-office/evidence-bindings.json}
       - OTEL_EXPORTER_OTLP_ENDPOINT=jaeger:4317
       - OTEL_SERVICE_NAME=WeKnora
       - OTEL_TRACES_EXPORTER=otlp
@@ -228,6 +233,9 @@ services:
       - DOCREADER_PDF_RENDER_MAX_WORKERS=${DOCREADER_PDF_RENDER_MAX_WORKERS:-1}
       - DOCREADER_PDF_RENDER_DPI=${DOCREADER_PDF_RENDER_DPI:-200}
       - DOCREADER_PDF_JPEG_QUALITY=${DOCREADER_PDF_JPEG_QUALITY:-90}
+      - DEEP_PARSER_CONVERTER_ENDPOINT=${DEEP_PARSER_CONVERTER_ENDPOINT:-http://192.168.20.60:2223/convert}
+      - DEEP_PARSER_ENDPOINT=${DEEP_PARSER_ENDPOINT:-http://192.168.20.60:9888/parse/files_new}
+      - DEEP_PARSER_MODE=${DEEP_PARSER_MODE:-ultra_mineru}
       - GRPC_TLS_ENABLED=${GRPC_TLS_ENABLED:-false}
       - GRPC_TLS_CERT=${GRPC_TLS_CERT:-}
       - GRPC_TLS_KEY=${GRPC_TLS_KEY:-}

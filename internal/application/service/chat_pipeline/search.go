@@ -163,29 +163,43 @@ func getSearchResultFromHistory(chatManage *types.ChatManage) []*types.SearchRes
 }
 
 func removeDuplicateResults(results []*types.SearchResult) []*types.SearchResult {
-	seen := make(map[string]bool)
-	contentSig := make(map[string]string) // sig -> first chunk ID
+	seen := make(map[string]*types.SearchResult)
+	contentSig := make(map[string]*types.SearchResult) // sig -> first result
 	var uniqueResults []*types.SearchResult
 	for _, r := range results {
 		// Only deduplicate by exact chunk ID — do NOT treat shared ParentChunkID
 		// as duplicates, because different child chunks of the same parent carry
 		// different content segments that may all be relevant.
-		if seen[r.ID] {
+		if existing, ok := seen[r.ID]; ok {
+			mergeSearchResultEvidence(existing, r)
 			logger.Debugf(context.Background(), "Dedup: chunk %s removed due to duplicate ID", r.ID)
 			continue
 		}
 		sig := buildContentSignature(r.Content)
 		if sig != "" {
-			if firstChunk, exists := contentSig[sig]; exists {
-				logger.Debugf(context.Background(), "Dedup: chunk %s removed due to content signature (dup of %s, sig prefix: %.50s...)", r.ID, firstChunk, sig)
+			if existing, exists := contentSig[sig]; exists {
+				mergeSearchResultEvidence(existing, r)
+				logger.Debugf(context.Background(), "Dedup: chunk %s removed due to content signature (dup of %s, sig prefix: %.50s...)", r.ID, existing.ID, sig)
 				continue
 			}
-			contentSig[sig] = r.ID
+			contentSig[sig] = r
 		}
-		seen[r.ID] = true
+		seen[r.ID] = r
 		uniqueResults = append(uniqueResults, r)
 	}
 	return uniqueResults
+}
+
+func mergeSearchResultEvidence(target *types.SearchResult, source *types.SearchResult) {
+	if target == nil || source == nil {
+		return
+	}
+	if len(target.GraphEvidence) == 0 && len(source.GraphEvidence) > 0 {
+		target.GraphEvidence = source.GraphEvidence
+	}
+	if len(target.DeepOfficeCitation) == 0 && len(source.DeepOfficeCitation) > 0 {
+		target.DeepOfficeCitation = source.DeepOfficeCitation
+	}
 }
 
 func buildContentSignature(content string) string {
@@ -384,10 +398,12 @@ func (p *PluginSearch) searchByTargets(
 			// Separate full-KB targets (can be combined into one retrieval)
 			// from specific-knowledge targets (need per-target direct loading).
 			var fullKBIDs []string
+			var fullKBTargets []*types.SearchTarget
 			var knowledgeTargets []*types.SearchTarget
 			for _, t := range targets {
 				if t.Type == types.SearchTargetTypeKnowledgeBase {
 					fullKBIDs = append(fullKBIDs, t.KnowledgeBaseID)
+					fullKBTargets = append(fullKBTargets, t)
 				} else {
 					knowledgeTargets = append(knowledgeTargets, t)
 				}
@@ -423,7 +439,9 @@ func (p *PluginSearch) searchByTargets(
 							"kb_ids": fullKBIDs,
 							"error":  err.Error(),
 						})
-						return
+						res = p.directLoadFallbackForKnowledgeBases(ctx, fullKBTargets)
+					} else if len(res) == 0 {
+						res = p.directLoadFallbackForKnowledgeBases(ctx, fullKBTargets)
 					}
 					pipelineInfo(ctx, "Search", "combined_kb_result", map[string]interface{}{
 						"kb_ids":    fullKBIDs,
@@ -607,6 +625,7 @@ func (p *PluginSearch) tryDirectChunkLoading(ctx context.Context, tenantID uint6
 			res.KnowledgeSource = k.Source
 			res.KnowledgeChannel = k.Channel
 			res.Metadata = k.GetMetadata()
+			res.KnowledgeBaseID = k.KnowledgeBaseID
 		}
 
 		results = append(results, res)
@@ -615,6 +634,72 @@ func (p *PluginSearch) tryDirectChunkLoading(ctx context.Context, tenantID uint6
 	searchutil.EnrichSearchResultsImageInfo(ctx, p.chunkService.GetRepository(), tenantID, results)
 
 	return results, skippedIDs
+}
+
+// directLoadFallbackForKnowledgeBases loads chunks directly from explicitly
+// selected KBs when index-backed retrieval has no usable hits. This keeps the
+// MVP chat path useful for small, parsed documents before embedding/keyword
+// indexes are fully configured.
+func (p *PluginSearch) directLoadFallbackForKnowledgeBases(
+	ctx context.Context,
+	targets []*types.SearchTarget,
+) []*types.SearchResult {
+	if len(targets) == 0 {
+		return nil
+	}
+
+	var results []*types.SearchResult
+	for _, target := range targets {
+		if target == nil || target.KnowledgeBaseID == "" {
+			continue
+		}
+
+		targetTenantID := target.TenantID
+		if targetTenantID == 0 {
+			targetTenantID, _ = types.TenantIDFromContext(ctx)
+		}
+		targetCtx := ctx
+		if targetTenantID != 0 {
+			targetCtx = context.WithValue(ctx, types.TenantIDContextKey, targetTenantID)
+		}
+
+		knowledges, err := p.knowledgeService.ListKnowledgeByKnowledgeBaseID(targetCtx, target.KnowledgeBaseID)
+		if err != nil {
+			pipelineWarn(ctx, "Search", "direct_load_kb_list_error", map[string]interface{}{
+				"kb_id":     target.KnowledgeBaseID,
+				"tenant_id": targetTenantID,
+				"error":     err.Error(),
+			})
+			continue
+		}
+
+		knowledgeIDs := make([]string, 0, len(knowledges))
+		for _, knowledge := range knowledges {
+			if knowledge != nil && knowledge.ID != "" {
+				knowledgeIDs = append(knowledgeIDs, knowledge.ID)
+			}
+		}
+		if len(knowledgeIDs) == 0 {
+			continue
+		}
+
+		directResults, skippedIDs := p.tryDirectChunkLoading(targetCtx, targetTenantID, knowledgeIDs)
+		for _, result := range directResults {
+			if result.KnowledgeBaseID == "" {
+				result.KnowledgeBaseID = target.KnowledgeBaseID
+			}
+		}
+
+		pipelineInfo(ctx, "Search", "direct_load_kb_fallback", map[string]interface{}{
+			"kb_id":        target.KnowledgeBaseID,
+			"knowledge":    len(knowledgeIDs),
+			"loaded_count": len(directResults),
+			"skipped_ids":  len(skippedIDs),
+		})
+		results = append(results, directResults...)
+	}
+
+	return results
 }
 
 // searchWebIfEnabled executes web search when enabled and returns converted results

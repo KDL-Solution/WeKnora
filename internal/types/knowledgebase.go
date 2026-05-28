@@ -146,6 +146,54 @@ type ParserEngineRule struct {
 	Engine    string   `yaml:"engine"     json:"engine"`
 }
 
+const (
+	ParserEngineBuiltin    = "builtin"
+	ParserEngineDeepParser = "deep_parser"
+)
+
+var deepOfficeBuiltinDocReaderFileTypes = map[string]bool{
+	"md": true, "markdown": true,
+	"xlsx": true, "xls": true,
+	"csv": true, "txt": true, "text": true,
+}
+
+// DefaultDeepOfficeParserEngineRules routes user-created document KBs through
+// DeepParser for layout-heavy documents while keeping text/table-native files
+// on the built-in DocReader path. DeepParser renders PDFs with DocReader's
+// built-in PDF image renderer and sends Office/HWP documents through the
+// converter before calling DeepParser.
+func DefaultDeepOfficeParserEngineRules() []ParserEngineRule {
+	return []ParserEngineRule{
+		{
+			FileTypes: []string{
+				"pdf",
+				"doc",
+				"docx",
+				"ppt",
+				"pptx",
+				"hwp",
+				"hwpx",
+				"jpg",
+				"jpeg",
+				"png",
+				"gif",
+				"bmp",
+				"tiff",
+				"webp",
+			},
+			Engine: ParserEngineDeepParser,
+		},
+		{
+			FileTypes: []string{"md", "markdown", "xlsx", "xls", "csv", "txt"},
+			Engine:    ParserEngineBuiltin,
+		},
+	}
+}
+
+func DeepOfficeBuiltinDocReaderFileType(fileType string) bool {
+	return deepOfficeBuiltinDocReaderFileTypes[strings.ToLower(strings.TrimPrefix(fileType, "."))]
+}
+
 // ChunkingConfig represents the document splitting configuration
 type ChunkingConfig struct {
 	// Chunk size
@@ -186,9 +234,13 @@ type ChunkingConfig struct {
 // based on the configured rules. Returns empty string (builtin) when
 // no rule matches.
 func (c ChunkingConfig) ResolveParserEngine(fileType string) string {
+	normalized := strings.ToLower(strings.TrimPrefix(fileType, "."))
 	for _, rule := range c.ParserEngineRules {
 		for _, ft := range rule.FileTypes {
-			if ft == fileType {
+			if strings.ToLower(strings.TrimPrefix(ft, ".")) == normalized {
+				if rule.Engine == ParserEngineDeepParser && DeepOfficeBuiltinDocReaderFileType(normalized) {
+					return ParserEngineBuiltin
+				}
 				return rule.Engine
 			}
 		}

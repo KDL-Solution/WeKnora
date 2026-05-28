@@ -240,6 +240,17 @@ func TestCreateKnowledgeBase_VectorStoreBinding(t *testing.T) {
 	_ = retriever.ErrVectorStoreNotFound
 }
 
+func TestCreateKnowledgeBase_DefaultsToDeepOfficeParserRules(t *testing.T) {
+	repo := newFakeKBRepo()
+	svc := newPR3KBService(repo, &fakeRegistry{registered: map[string]struct{}{}}, &fakeOwnership{})
+
+	kb, err := svc.CreateKnowledgeBase(ctxWithTenant(1), &types.KnowledgeBase{Name: "kb"})
+	require.NoError(t, err)
+	require.Len(t, kb.ChunkingConfig.ParserEngineRules, 2)
+	assert.Equal(t, types.ParserEngineDeepParser, kb.ChunkingConfig.ParserEngineRules[0].Engine)
+	assert.Equal(t, types.ParserEngineBuiltin, kb.ChunkingConfig.ParserEngineRules[1].Engine)
+}
+
 // ---------------------------------------------------------------------------
 // CopyKnowledgeBase — embedding model + vector store defenses
 // ---------------------------------------------------------------------------

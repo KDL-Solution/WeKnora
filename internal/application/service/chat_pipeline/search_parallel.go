@@ -155,6 +155,7 @@ func (p *PluginSearchParallel) OnEvent(ctx context.Context,
 	// Merge results from both searches
 	chatManage.SearchResult = append(chunkCM.SearchResult, entityCM.SearchResult...)
 	chatManage.SearchResult = removeDuplicateResults(chatManage.SearchResult)
+	chatManage.GraphResult = mergeGraphData(chunkCM.GraphResult, entityCM.GraphResult)
 
 	for name, err := range errs {
 		logger.Warnf(ctx, "[SearchParallel] %s error: %v", name, err.Err)
@@ -176,4 +177,42 @@ func (p *PluginSearchParallel) OnEvent(ctx context.Context,
 	}
 
 	return next()
+}
+
+func mergeGraphData(graphs ...*types.GraphData) *types.GraphData {
+	merged := &types.GraphData{}
+	nodeSeen := make(map[string]struct{})
+	relSeen := make(map[string]struct{})
+
+	for _, graph := range graphs {
+		if graph == nil {
+			continue
+		}
+		for _, node := range graph.Node {
+			if node == nil || node.Name == "" {
+				continue
+			}
+			if _, ok := nodeSeen[node.Name]; ok {
+				continue
+			}
+			nodeSeen[node.Name] = struct{}{}
+			merged.Node = append(merged.Node, node)
+		}
+		for _, rel := range graph.Relation {
+			if rel == nil {
+				continue
+			}
+			key := rel.Node1 + "\x00" + rel.Type + "\x00" + rel.Node2
+			if _, ok := relSeen[key]; ok {
+				continue
+			}
+			relSeen[key] = struct{}{}
+			merged.Relation = append(merged.Relation, rel)
+		}
+	}
+
+	if len(merged.Node) == 0 && len(merged.Relation) == 0 {
+		return nil
+	}
+	return merged
 }

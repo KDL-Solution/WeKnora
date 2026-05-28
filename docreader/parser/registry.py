@@ -2,6 +2,10 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from docreader.parser.base_parser import BaseParser
+from docreader.parser.deep_parser_parser import (
+    DeepParserParser,
+    check_deep_parser_available,
+)
 from docreader.parser.doc_parser import DocParser
 from docreader.parser.docx2_parser import Docx2Parser
 from docreader.parser.excel_parser import ExcelParser
@@ -9,6 +13,7 @@ from docreader.parser.image_parser import ImageParser
 from docreader.parser.markdown_parser import MarkdownParser
 from docreader.parser.markitdown_parser import MarkitdownParser
 from docreader.parser.pdf_parser import PDFParser
+from docreader.parser.text_parser import CSVParser, TextParser
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +121,9 @@ def _build_default_registry() -> ParserEngineRegistry:
     _image_types = {
         ext: ImageParser for ext in ("jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp")
     }
+    _deep_parser_image_types = {
+        ext: DeepParserParser for ext in ("jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp")
+    }
 
     reg.register(
         BUILTIN_ENGINE,
@@ -127,9 +135,29 @@ def _build_default_registry() -> ParserEngineRegistry:
             "markdown": MarkdownParser,
             "xlsx": ExcelParser,
             "xls": ExcelParser,
+            "csv": CSVParser,
+            "txt": TextParser,
+            "text": TextParser,
             **_image_types,
         },
-        description="内置解析引擎",
+        description="Built-in DocReader parser engine",
+    )
+
+    reg.register(
+        "deep_parser",
+        {
+            "docx": DeepParserParser,
+            "doc": DeepParserParser,
+            "pdf": DeepParserParser,
+            "pptx": DeepParserParser,
+            "ppt": DeepParserParser,
+            "hwp": DeepParserParser,
+            "hwpx": DeepParserParser,
+            **_deep_parser_image_types,
+        },
+        description="DeepParser via built-in PDF rendering, Polaris converter, and /parse/files_new",
+        check_available=check_deep_parser_available,
+        unavailable_hint="DeepParser or converter endpoint unavailable",
     )
 
     reg.register(

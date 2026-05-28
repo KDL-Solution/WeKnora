@@ -126,6 +126,12 @@ type SearchResult struct {
 	// ChunkMetadata stores chunk-level metadata (e.g., generated questions)
 	ChunkMetadata JSON `json:"chunk_metadata,omitempty"`
 
+	// DeepOfficeCitation stores optional parser-grounded citation evidence.
+	DeepOfficeCitation map[string]interface{} `json:"deep_office_citation,omitempty"`
+
+	// GraphEvidence stores optional graph-retrieval evidence for GraphRAG matches.
+	GraphEvidence map[string]interface{} `json:"graph_evidence,omitempty"`
+
 	// MatchedContent is the actual content that was matched in vector search
 	// For FAQ: this is the matched question text (standard or similar question)
 	MatchedContent string `json:"matched_content,omitempty"`
