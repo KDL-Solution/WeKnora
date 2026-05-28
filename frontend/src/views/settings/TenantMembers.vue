@@ -610,7 +610,7 @@ function formatDate(s: string | undefined): string {
   if (!s) return '-'
   try {
     const d = new Date(s)
-    return new Intl.DateTimeFormat(locale.value || 'zh-CN', {
+    return new Intl.DateTimeFormat(locale.value || 'ko-KR', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',

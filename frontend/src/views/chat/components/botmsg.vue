@@ -1,59 +1,62 @@
 <template>
     <div class="bot_msg" :class="{ 'is-embedded': embeddedMode }">
-        <div style="display: flex;flex-direction: column; gap:8px">
-            <!-- 显示@的知识库和文件（非 Agent 模式下显示） -->
-            <div v-if="!session.isAgentMode && mentionedItems && mentionedItems.length > 0" class="mentioned_items">
-                <span
-                    v-for="item in mentionedItems"
-                    :key="item.id"
-                    class="mentioned_tag"
-                    :class="[
-                      item.type === 'kb' ? (item.kb_type === 'faq' ? 'faq-tag' : 'kb-tag') : 'file-tag'
-                    ]"
-                >
-                    <span class="tag_icon">
-                        <t-icon v-if="item.type === 'kb'" :name="item.kb_type === 'faq' ? 'chat-bubble-help' : 'folder'" />
-                        <t-icon v-else name="file" />
+        <div v-if="!embeddedMode" class="assistant-avatar" aria-hidden="true">D</div>
+        <div class="bot_msg_body">
+            <div class="bot_meta_stack">
+                <!-- 显示@的知识库和文件（非 Agent 模式下显示） -->
+                <div v-if="!session.isAgentMode && mentionedItems && mentionedItems.length > 0" class="mentioned_items">
+                    <span
+                        v-for="item in mentionedItems"
+                        :key="item.id"
+                        class="mentioned_tag"
+                        :class="[
+                          item.type === 'kb' ? (item.kb_type === 'faq' ? 'faq-tag' : 'kb-tag') : 'file-tag'
+                        ]"
+                    >
+                        <span class="tag_icon">
+                            <t-icon v-if="item.type === 'kb'" :name="item.kb_type === 'faq' ? 'chat-bubble-help' : 'folder'" />
+                            <t-icon v-else name="file" />
+                        </span>
+                        <span class="tag_name">{{ item.name }}</span>
                     </span>
-                    <span class="tag_name">{{ item.name }}</span>
-                </span>
-            </div>
-            <docInfo :session="session"></docInfo>
-            <AgentStreamDisplay :session="session" :user-query="userQuery" v-if="session.isAgentMode"></AgentStreamDisplay>
-            <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
-        </div>
-        <!-- 非 Agent 模式下才显示传统的 markdown 渲染 -->
-        <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode">
-            <!-- 直接渲染完整内容，避免切分导致的问题，样式与 thinking 一致 -->
-            <!-- 只有当有实际内容时才显示包围框 -->
-            <div class="content-wrapper" v-if="hasActualContent">
-                <div class="ai-markdown-template markdown-content" v-html="renderedHTML">
                 </div>
+                <docInfo :session="session"></docInfo>
+                <AgentStreamDisplay :session="session" :user-query="userQuery" v-if="session.isAgentMode"></AgentStreamDisplay>
+                <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
             </div>
-            <!-- Streaming indicator (non-Agent mode) -->
-            <div v-if="hasActualContent && !session.is_completed" class="loading-indicator">
-                <div class="loading-typing">
-                    <span></span>
-                    <span></span>
-                    <span></span>
+            <!-- 非 Agent 模式下才显示传统的 markdown 渲染 -->
+            <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode">
+                <!-- 直接渲染完整内容，避免切分导致的问题，样式与 thinking 一致 -->
+                <!-- 只有当有实际内容时才显示包围框 -->
+                <div class="content-wrapper" v-if="hasActualContent">
+                    <div class="ai-markdown-template markdown-content" v-html="renderedHTML">
+                    </div>
                 </div>
-            </div>
-            <!-- 复制和添加到知识库按钮 - 非 Agent 模式下显示 -->
-            <div v-if="session.is_completed && (content || session.content)" class="answer-toolbar">
-                <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer" :title="$t('agent.copy')">
-                    <t-icon name="copy" />
-                </t-button>
-                <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge" :title="$t('agent.addToKnowledgeBase')">
-                    <t-icon name="add" />
-                </t-button>
-                <!-- Fallback 提示图标 -->
-                <t-tooltip v-if="session.is_fallback" :content="$t('chat.fallbackHint')" placement="top">
-                    <t-button size="small" variant="outline" shape="round" class="fallback-icon-btn">
-                        <t-icon name="info-circle" />
+                <!-- Streaming indicator (non-Agent mode) -->
+                <div v-if="hasActualContent && !session.is_completed" class="loading-indicator">
+                    <div class="loading-typing">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+                <!-- 复制和添加到知识库按钮 - 非 Agent 模式下显示 -->
+                <div v-if="session.is_completed && (content || session.content)" class="answer-toolbar">
+                    <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer" :title="$t('agent.copy')">
+                        <t-icon name="copy" />
                     </t-button>
-                </t-tooltip>
+                    <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge" :title="$t('agent.addToKnowledgeBase')">
+                        <t-icon name="add" />
+                    </t-button>
+                    <!-- Fallback 提示图标 -->
+                    <t-tooltip v-if="session.is_fallback" :content="$t('chat.fallbackHint')" placement="top">
+                        <t-button size="small" variant="outline" shape="round" class="fallback-icon-btn">
+                            <t-icon name="info-circle" />
+                        </t-button>
+                    </t-tooltip>
+                </div>
+                <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{ $t('common.loading') }}</span></div>
             </div>
-            <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{ $t('common.loading') }}</span></div>
         </div>
         <picturePreview :reviewImg="reviewImg" :reviewUrl="reviewUrl" @closePreImg="closePreImg"></picturePreview>
     </div>
@@ -276,8 +279,21 @@ onBeforeUnmount(() => {
 @import '../../../components/css/chat-message-shared.less';
 
 .bot_msg {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+    margin-right: auto;
+    color: var(--td-text-color-primary);
+    font-size: 16px;
+    box-sizing: border-box;
+
     &.is-embedded {
         width: 100%;
+
+        .bot_msg_body {
+            max-width: 100%;
+        }
         
         :deep(.agent-stream-display) {
             width: 100%;
@@ -285,11 +301,43 @@ onBeforeUnmount(() => {
     }
 }
 
-// 内容包装器 - 与 Agent 模式的 answer 样式一致
+.assistant-avatar {
+    width: 28px;
+    height: 28px;
+    margin-top: 3px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 28px;
+    background: var(--deep-office-ink, #111111);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 2px 8px rgba(17, 17, 17, 0.12);
+}
+
+.bot_msg_body {
+    min-width: 0;
+    max-width: min(760px, calc(100% - 40px));
+}
+
+.bot_meta_stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+// Assistant answers should read as chat bubbles, not full-width cards.
 .content-wrapper {
-    background: var(--td-bg-color-container);
-    border-radius: 6px;
-    padding: 8px 0px;
+    display: inline-block;
+    max-width: 100%;
+    background: #ffffff;
+    border: 1px solid var(--deep-office-border, #e5e7eb);
+    border-radius: 16px 16px 16px 5px;
+    padding: 10px 14px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     transition: all 0.2s ease;
 }
 
@@ -313,8 +361,8 @@ onBeforeUnmount(() => {
     max-width: 200px;
     cursor: default;
     transition: all 0.15s;
-    background: rgba(7, 192, 95, 0.06);
-    border: 1px solid rgba(7, 192, 95, 0.2);
+    background: rgba(37, 99, 235, 0.06);
+    border: 1px solid rgba(37, 99, 235, 0.2);
     color: var(--td-text-color-primary);
 
     &.kb-tag {
@@ -380,6 +428,14 @@ onBeforeUnmount(() => {
     :deep(p) {
         margin: 6px 0;
         line-height: 1.6;
+    }
+
+    :deep(p:first-child) {
+        margin-top: 0;
+    }
+
+    :deep(p:last-child) {
+        margin-bottom: 0;
     }
 
     :deep(code) {
@@ -508,13 +564,9 @@ onBeforeUnmount(() => {
 }
 
 .bot_msg {
-    // background: var(--td-bg-color-container);
-    border-radius: 4px;
     color: var(--td-text-color-primary);
     font-size: 16px;
-    // padding: 10px 12px;
     margin-right: auto;
-    max-width: 100%;
     box-sizing: border-box;
 }
 

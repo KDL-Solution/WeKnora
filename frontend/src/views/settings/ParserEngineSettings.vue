@@ -493,7 +493,7 @@ async function onSave() {
   }
 }
 
-// ---- WeKnoraCloud 凭证状态 ----
+// ---- Cloud Parser 凭证状态 ----
 const wkcState = ref<'loading' | 'unconfigured' | 'configured' | 'expired'>('loading')
 
 async function checkWkcStatus() {
@@ -760,7 +760,7 @@ onMounted(loadAll)
   cursor: help;
 }
 
-// ---- WeKnoraCloud 凭证状态 ----
+// ---- Cloud Parser 凭证状态 ----
 .wkc-status {
   display: flex;
   align-items: flex-start;

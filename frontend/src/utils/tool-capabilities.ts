@@ -167,19 +167,18 @@ export function deriveKbFilterFromTools(
 
 /**
  * Implicit KB capability requirement for the "quick-answer" (RAG) agent
- * mode. Quick-answer drives retrieval purely through vector/keyword chunk
- * search and ships with NO `allowed_tools`, so the tool-derived filter
- * alone would let wiki-only KBs through even though they can't contribute
- * anything to a RAG answer. Treat this as a property of the agent MODE.
+ * mode. In the Deep Office MVP, parser-backed/wiki-enabled KBs can answer
+ * through the backend direct chunk fallback before vector/keyword indexing is
+ * fully initialized, so wiki is also a valid retrieval surface here.
  */
 const QUICK_ANSWER_KB_FILTER: { any_of: KBCapability[] } = {
-  any_of: ['vector', 'keyword'],
+  any_of: ['vector', 'keyword', 'wiki'],
 };
 
 /**
  * Agent-mode aware version of `deriveKbFilterFromTools`: unions the
  * tool-derived `any_of` with the implicit requirement of `agentMode`
- * (currently: quick-answer → vector|keyword).
+ * (currently: quick-answer → vector|keyword|wiki).
  *
  * Returns `null` when neither the agent mode nor the tools impose any
  * capability constraint (i.e. any KB is acceptable).
@@ -200,10 +199,10 @@ export function deriveKbFilterForAgent(
 
 /**
  * Agent-mode aware version of `kbSatisfiesToolRequirements`: ALSO honours
- * the implicit capability requirement of `agentMode` (quick-answer needs
- * vector or keyword indexing). Use this anywhere the user is choosing a
- * KB for an agent — agent editor "specified KB" dropdown, chat `@`
- * mention list, etc.
+ * the implicit capability requirement of `agentMode` (quick-answer can use
+ * vector, keyword, or parser-backed wiki chunks). Use this anywhere the user
+ * is choosing a KB for an agent — agent editor "specified KB" dropdown,
+ * chat `@` mention list, etc.
  */
 export function kbSatisfiesAgentRequirements(
   kbCaps: Partial<ScopeCapabilities> | undefined | null,

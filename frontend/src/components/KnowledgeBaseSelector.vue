@@ -76,6 +76,19 @@ interface KnowledgeBase {
   chunk_count?: number
   embedding_model_id?: string
   summary_model_id?: string
+  capabilities?: {
+    vector?: boolean
+    keyword?: boolean
+    wiki?: boolean
+    graph?: boolean
+    faq?: boolean
+  }
+  indexing_strategy?: {
+    vector_enabled?: boolean
+    keyword_enabled?: boolean
+    wiki_enabled?: boolean
+    graph_enabled?: boolean
+  }
 }
 
 const { t } = useI18n()
@@ -103,11 +116,30 @@ const dropdownStyle = ref<Record<string, string>>({})
 const dropdownWidth = props.dropdownWidth ?? 300
 const offsetY = props.offsetY ?? 8
 
-// 过滤：只显示已初始化（有 embedding & summary）的
+const hasPositiveCount = (value: unknown): boolean => {
+  const count = Number(value ?? 0)
+  return Number.isFinite(count) && count > 0
+}
+
+const kbHasContent = (kb: KnowledgeBase): boolean =>
+  hasPositiveCount(kb.knowledge_count) || hasPositiveCount(kb.chunk_count)
+
+const kbHasWikiSurface = (kb: KnowledgeBase): boolean =>
+  !!kb.capabilities?.wiki || !!kb.indexing_strategy?.wiki_enabled
+
+const kbHasInitializedVectorSearch = (kb: KnowledgeBase): boolean => {
+  if (!kb.summary_model_id) return false
+  const strategy = kb.indexing_strategy
+  const needsEmbedding = !strategy || strategy.vector_enabled || strategy.keyword_enabled
+  return !needsEmbedding || !!kb.embedding_model_id
+}
+
+const isSelectableKnowledgeBase = (kb: KnowledgeBase): boolean =>
+  kbHasInitializedVectorSearch(kb) || (kbHasWikiSurface(kb) && kbHasContent(kb))
+
+// 过滤：기존 vector/keyword 초기화 KB와 Deep Office MVP의 parser-backed wiki KB를 함께 표시
 const filteredKnowledgeBases = computed(() => {
-  const valid = knowledgeBases.value.filter(
-    k => k.embedding_model_id && k.summary_model_id
-  )
+  const valid = knowledgeBases.value.filter(k => isSelectableKnowledgeBase(k))
   if (!searchQuery.value) return valid
   const q = searchQuery.value.toLowerCase()
   return valid.filter(k => k.name.toLowerCase().includes(q))
@@ -198,14 +230,15 @@ const updateDropdownPosition = () => {
   let rect: DOMRect | null = null
   try {
     if (typeof anchor.getBoundingClientRect === 'function') {
-      rect = anchor.getBoundingClientRect()
+      const anchorRect = anchor.getBoundingClientRect()
+      rect = anchorRect
       console.log('[KB Selector] Button rect:', {
-        top: rect.top,
-        bottom: rect.bottom,
-        left: rect.left,
-        right: rect.right,
-        width: rect.width,
-        height: rect.height
+        top: anchorRect.top,
+        bottom: anchorRect.bottom,
+        left: anchorRect.left,
+        right: anchorRect.right,
+        width: anchorRect.width,
+        height: anchorRect.height
       })
     } else if (anchor.width !== undefined && anchor.left !== undefined) {
       // 已经是 DOMRect

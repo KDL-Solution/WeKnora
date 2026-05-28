@@ -38,11 +38,14 @@ agent_type_presets:
         label: "RAG Q&A"
         description: "Evidence-based retrieval over document chunks. Best for document or FAQ KBs without Wiki."
       zh-CN:
-        label: "RAG 问答"
-        description: "基于文档分块的检索式问答，适合未启用 Wiki 的文档 / FAQ 知识库。"
+        label: "RAG Q&A"
+        description: "문서 청크 기반의 근거 중심 검색 질답입니다. Wiki를 사용하지 않는 문서 / FAQ 지식 베이스에 적합합니다."
       zh-TW:
-        label: "RAG 問答"
-        description: "基於文件分塊的檢索式問答，適合未啟用 Wiki 的文件 / FAQ 知識庫。"
+        label: "RAG Q&A"
+        description: "문서 청크 기반의 근거 중심 검색 질답입니다. Wiki를 사용하지 않는 문서 / FAQ 지식 베이스에 적합합니다."
+      ko-KR:
+        label: "RAG Q&A"
+        description: "문서 청크 기반의 근거 중심 검색 질답입니다. Wiki를 사용하지 않는 문서 / FAQ 지식 베이스에 적합합니다."
     config:
       system_prompt_id: "progressive_rag_agent"
       temperature: 0.7
@@ -72,11 +75,14 @@ agent_type_presets:
         label: "Wiki Q&A"
         description: "Wiki-first answering: search, read and follow links across wiki pages. Requires a Wiki-enabled KB."
       zh-CN:
-        label: "Wiki 问答"
-        description: "以 Wiki 为主的检索与图谱跳转回答，必须绑定已启用 Wiki 的知识库。"
+        label: "Wiki Q&A"
+        description: "Wiki 페이지를 먼저 검색하고 읽으며 링크를 따라 답변합니다. Wiki가 활성화된 지식 베이스가 필요합니다."
       zh-TW:
-        label: "Wiki 問答"
-        description: "以 Wiki 為主的檢索與圖譜跳轉回答，必須綁定已啟用 Wiki 的知識庫。"
+        label: "Wiki Q&A"
+        description: "Wiki 페이지를 먼저 검색하고 읽으며 링크를 따라 답변합니다. Wiki가 활성화된 지식 베이스가 필요합니다."
+      ko-KR:
+        label: "Wiki Q&A"
+        description: "Wiki 페이지를 먼저 검색하고 읽으며 링크를 따라 답변합니다. Wiki가 활성화된 지식 베이스가 필요합니다."
     config:
       system_prompt_id: "wiki_researcher"
       temperature: 0.7
@@ -104,11 +110,14 @@ agent_type_presets:
         label: "Hybrid (Wiki + RAG)"
         description: "Uses wiki pages for navigation and context, then drills into chunks for precise quotes. Requires KBs with BOTH Wiki and chunk indexing."
       zh-CN:
-        label: "Wiki + RAG 混合"
-        description: "先用 Wiki 建立导航和背景，再用分块检索精确引用。需绑定同时启用 Wiki 与向量/关键词索引的知识库。"
+        label: "하이브리드 (Wiki + RAG)"
+        description: "Wiki로 맥락과 탐색 경로를 잡은 뒤 청크 검색으로 정확한 인용을 확인합니다. Wiki와 청크 인덱싱이 모두 활성화된 지식 베이스가 필요합니다."
       zh-TW:
-        label: "Wiki + RAG 混合"
-        description: "先用 Wiki 建立導覽和背景，再用分塊檢索精確引用。需綁定同時啟用 Wiki 與向量/關鍵詞索引的知識庫。"
+        label: "하이브리드 (Wiki + RAG)"
+        description: "Wiki로 맥락과 탐색 경로를 잡은 뒤 청크 검색으로 정확한 인용을 확인합니다. Wiki와 청크 인덱싱이 모두 활성화된 지식 베이스가 필요합니다."
+      ko-KR:
+        label: "하이브리드 (Wiki + RAG)"
+        description: "Wiki로 맥락과 탐색 경로를 잡은 뒤 청크 검색으로 정확한 인용을 확인합니다. Wiki와 청크 인덱싱이 모두 활성화된 지식 베이스가 필요합니다."
     config:
       system_prompt_id: "hybrid_rag_wiki_agent"
       temperature: 0.7
@@ -152,11 +161,14 @@ agent_type_presets:
         label: "Data Analysis"
         description: "SQL queries and statistics over tabular files (CSV / Excel). Pair with a KB that holds data files."
       zh-CN:
-        label: "数据分析"
-        description: "对 CSV / Excel 等表格文件执行 SQL 查询和统计分析。请绑定包含数据文件的知识库。"
+        label: "데이터 분석"
+        description: "CSV / Excel 같은 표 형식 파일에 SQL 쿼리와 통계 분석을 수행합니다. 데이터 파일이 들어 있는 지식 베이스와 함께 사용하세요."
       zh-TW:
-        label: "數據分析"
-        description: "對 CSV / Excel 等表格檔案執行 SQL 查詢和統計分析。請綁定包含數據檔案的知識庫。"
+        label: "데이터 분석"
+        description: "CSV / Excel 같은 표 형식 파일에 SQL 쿼리와 통계 분석을 수행합니다. 데이터 파일이 들어 있는 지식 베이스와 함께 사용하세요."
+      ko-KR:
+        label: "데이터 분석"
+        description: "CSV / Excel 같은 표 형식 파일에 SQL 쿼리와 통계 분석을 수행합니다. 데이터 파일이 들어 있는 지식 베이스와 함께 사용하세요."
     config:
       system_prompt_id: "data_analyst"
       temperature: 0.3
@@ -194,10 +206,13 @@ agent_type_presets:
         label: "Custom"
         description: "Full control. Manually pick tools, prompt and KB scope."
       zh-CN:
-        label: "自定义"
-        description: "完全自定义：自行选择工具、提示词和知识库。"
+        label: "사용자 지정"
+        description: "도구, 프롬프트, 지식 베이스 범위를 직접 선택합니다."
       zh-TW:
-        label: "自訂"
-        description: "完全自訂：自行選擇工具、提示詞和知識庫。"
+        label: "사용자 지정"
+        description: "도구, 프롬프트, 지식 베이스 범위를 직접 선택합니다."
+      ko-KR:
+        label: "사용자 지정"
+        description: "도구, 프롬프트, 지식 베이스 범위를 직접 선택합니다."
     # No `config:` block → preset applies no auto-fill.
     # No `kb_filter:`    → all KBs are selectable.

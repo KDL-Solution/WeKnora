@@ -143,7 +143,7 @@
       >
         <template #message>
           <div>{{ $t('settings.memoryRequiresNeo4j') }}</div>
-          <t-link theme="primary" href="https://github.com/Tencent/WeKnora/blob/main/docs/KnowledgeGraph.md" target="_blank">
+          <t-link theme="primary" href="https://agent.koreadeep.com/ko/dashboard" target="_blank">
             {{ $t('settings.memoryHowToEnable') }}
           </t-link>
         </template>
@@ -198,7 +198,7 @@ const {
 } = useFont()
 
 // 本地状态
-const localLanguage = ref('zh-CN')
+const localLanguage = ref('ko-KR')
 const localTheme = ref<ThemeMode>(currentTheme.value)
 const localSansFont = ref<FontKey>(currentSans.value)
 const localMonoFont = ref<MonoFontKey>(currentMono.value)
@@ -287,6 +287,7 @@ onMounted(async () => {
 const handleLanguageChange = () => {
   locale.value = localLanguage.value
   localStorage.setItem('locale', localLanguage.value)
+  localStorage.setItem('localeExplicitlySelected', 'true')
   MessagePlugin.success(t('language.languageSaved'))
     }
 

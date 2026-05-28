@@ -184,8 +184,8 @@ const closePreImg = () => {
     max-width: 200px;
     cursor: default;
     transition: all 0.15s;
-    background: rgba(7, 192, 95, 0.06);
-    border: 1px solid rgba(7, 192, 95, 0.2);
+    background: rgba(37, 99, 235, 0.06);
+    border: 1px solid rgba(37, 99, 235, 0.2);
     color: var(--td-text-color-primary);
 
     &.kb-tag {
@@ -238,10 +238,10 @@ const closePreImg = () => {
     align-items: center;
     gap: 4px;
     flex: 1 0 0;
-    border-radius: 4px;
-    background: #8CE97F;
+    border-radius: 16px 16px 5px 16px;
+    background: #111111;
     margin-left: auto;
-    color: #000000e6;
+    color: #fff;
     font-size: 15px;
     text-align: justify;
     word-break: break-all;

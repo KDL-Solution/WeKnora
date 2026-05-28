@@ -135,6 +135,10 @@ const uiStore = useUIStore()
 const localEngineRules = ref<ParserEngineRule[]>([...props.parserEngineRules])
 const parserEngines = ref<ParserEngineInfo[]>([])
 const loading = ref(true)
+const DEEP_PARSER_ENGINE = 'deep_parser'
+const BUILTIN_DOCREADER_ENGINE = 'builtin'
+const SIMPLE_ENGINE = 'simple'
+const BUILTIN_DOCREADER_TYPES = new Set(['md', 'markdown', 'xlsx', 'xls', 'csv', 'txt'])
 
 const allFileTypes = computed(() => {
   const s = new Set<string>()
@@ -158,9 +162,8 @@ const fileTypeGroups = computed(() => {
   const mdExts = ['md', 'markdown'].filter(e => ft.has(e))
   const txtExts = ['txt'].filter(e => ft.has(e))
   const jsonExts = ['json'].filter(e => ft.has(e))
+  const otherDocExts = ['hwp', 'hwpx'].filter(e => ft.has(e))
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'].filter(e => ft.has(e))
-  const audioExts = ['mp3', 'wav', 'm4a', 'flac', 'ogg'].filter(e => ft.has(e))
-  const audiovisualExts = [...audioExts]
 
   if (pdfExts.length) groups.push({ key: 'pdf', label: t('kbSettings.parser.fileTypePdf'), icon: 'file-pdf', extensions: pdfExts })
   if (officeExts.length) groups.push({ key: 'office', label: t('kbSettings.parser.fileTypeWord'), icon: 'file-word', extensions: officeExts })
@@ -170,15 +173,8 @@ const fileTypeGroups = computed(() => {
   if (mdExts.length) groups.push({ key: 'markdown', label: 'Markdown', icon: 'file-code', extensions: mdExts })
   if (txtExts.length) groups.push({ key: 'text', label: t('kbSettings.parser.fileTypeText'), icon: 'file', extensions: txtExts })
   if (jsonExts.length) groups.push({ key: 'json', label: t('kbSettings.parser.fileTypeJson'), icon: 'file-code', extensions: jsonExts })
+  if (otherDocExts.length) groups.push({ key: 'other-document', label: t('kbSettings.parser.fileTypeOtherDocument'), icon: 'file', extensions: otherDocExts })
   if (imageExts.length) groups.push({ key: 'image', label: t('kbSettings.parser.fileTypeImage'), icon: 'image', extensions: imageExts })
-  if (audiovisualExts.length) {
-    groups.push({
-      key: 'audiovisual',
-      label: t('kbSettings.parser.fileTypeAudiovisual'),
-      icon: 'sound',
-      extensions: audiovisualExts,
-    })
-  }
 
   return groups
 })
@@ -215,7 +211,15 @@ function hasAvailableEngine(extensions: string[]): boolean {
 
 function getDefaultEngine(extensions: string[]): string {
   const opts = getEngineOptions(extensions)
-  return opts.find(o => o.isDefault)?.value ?? ''
+  const available = opts.filter(o => !o.disabled)
+  if (extensions.some(ext => BUILTIN_DOCREADER_TYPES.has(ext))) {
+    return available.find(o => o.value === BUILTIN_DOCREADER_ENGINE)?.value
+      ?? available.find(o => o.value === SIMPLE_ENGINE)?.value
+      ?? ''
+  }
+  return available.find(o => o.value === DEEP_PARSER_ENGINE)?.value
+    ?? opts.find(o => o.isDefault)?.value
+    ?? ''
 }
 
 function getEngineForGroup(extensions: string[]): string {

@@ -93,28 +93,12 @@
     </div>
 
     <!-- Logo - Top Left -->
-    <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" :title="$t('common.github')">
-      <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
-    </a>
+    <div class="header-logo" aria-label="Korea Deep Learning">
+      <img src="@/assets/img/kdl-logo-with-text.png" alt="Korea Deep Learning" class="logo-image" />
+    </div>
 
     <!-- Header Links - Top Right -->
     <div class="header-links">
-      <a href="https://weknora.weixin.qq.com" target="_blank" class="header-link" :title="$t('common.website')">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-          <circle cx="12" cy="12" r="10"/>
-          <line x1="2" y1="12" x2="22" y2="12"/>
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-        </svg>
-        <span class="link-text">{{ $t('common.website') }}</span>
-      </a>
-      
-      <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-link" :title="$t('common.info')">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
-        </svg>
-        <span class="link-text">GitHub</span>
-      </a>
-      
       <div class="language-switch">
         <button @click="toggleLanguageMenu" class="header-link" :title="currentLangOption?.label">
           <span class="lang-flag-icon">{{ currentLangOption?.flag }}</span>
@@ -144,6 +128,8 @@
     <!-- Left Showcase Section -->
     <div class="showcase-section">
       <div class="showcase-content">
+        <img src="@/assets/img/kdl-logo-with-text.png" alt="Korea Deep Learning" class="showcase-logo" />
+        <h1 class="showcase-title">Deep Office</h1>
         <p class="showcase-subtitle">{{ $t('platform.subtitle') }}</p>
         <p class="showcase-description">{{ $t('platform.description') }}</p>
 
@@ -153,29 +139,6 @@
           <span class="tag">{{ $t('platform.localDeploy') }}</span>
         </div>
 
-        <!-- Swiper Carousel -->
-        <div class="carousel-container">
-          <swiper
-            :modules="modules"
-            :slides-per-view="1"
-            :loop="true"
-            :autoplay="{
-              delay: 4000,
-              disableOnInteraction: false,
-            }"
-            :effect="'fade'"
-            :fade-effect="{ crossFade: true }"
-            :pagination="{ clickable: true, dynamicBullets: false }"
-            :speed="800"
-            class="screenshot-swiper"
-          >
-            <swiper-slide v-for="(slide, index) in slides" :key="index">
-              <div class="slide-content">
-                <img :src="slide.image" :alt="slide.title" class="slide-image" />
-              </div>
-            </swiper-slide>
-          </swiper>
-        </div>
       </div>
     </div>
 
@@ -185,7 +148,7 @@
         <!-- Login Card -->
         <div class="form-card" v-if="!isRegisterMode">
                 <div class="form-header">
-                  <h2 class="form-title">{{ $t('auth.login') }}</h2>
+                  <h2 class="form-title">{{ $t('auth.loginWelcome') }}</h2>
                   <p class="form-welcome">{{ $t('auth.subtitle') }}</p>
                 </div>
 
@@ -374,46 +337,14 @@ import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useRoleLabel } from '@/composables/useRoleLabel'
 import { notifyLoginSuccess } from '@/utils/loginNotify'
-import { Swiper, SwiperSlide } from 'swiper/vue'
-import { Autoplay, EffectFade, Pagination } from 'swiper/modules'
-import 'swiper/css'
-import 'swiper/css/effect-fade'
-import 'swiper/css/pagination'
 import { login, register, getOIDCAuthorizationURL, getOIDCConfig, autoSetup, getAuthConfig } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
-
-// Import screenshot images
-import screenshot1 from '@/assets/img/screenshot-1.svg'
-import screenshot2 from '@/assets/img/screenshot-2.svg'
-import screenshot4 from '@/assets/img/screenshot-4.svg'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const { t, tm, locale } = useI18n()
 const { formatRole, roleIcon } = useRoleLabel()
-
-// Swiper modules
-const modules = [Autoplay, EffectFade, Pagination]
-
-// Carousel slides data
-const slides = [
-  {
-    image: screenshot4,
-    title: t('platform.carousel.agenticRagTitle'),
-    description: t('platform.carousel.agenticRagDesc')
-  },
-  {
-    image: screenshot2,
-    title: t('platform.carousel.hybridSearchTitle'),
-    description: t('platform.carousel.hybridSearchDesc')
-  },
-  {
-    image: screenshot1,
-    title: t('platform.carousel.smartDocRetrievalTitle'),
-    description: t('platform.carousel.smartDocRetrievalDesc')
-  }
-]
 
 // Form references
 const formRef = ref()
@@ -433,7 +364,7 @@ const registrationEnabled = ref(true)
 
 // Language options
 const languageOptions = [
-  { value: 'zh-CN', label: '简体中文', shortLabel: '中文', flag: '🇨🇳' },
+  { value: 'zh-CN', label: '중국어(간체)', shortLabel: '중국어', flag: '🇨🇳' },
   { value: 'en-US', label: 'English', shortLabel: 'EN', flag: '🇺🇸' },
   { value: 'ru-RU', label: 'Русский', shortLabel: 'RU', flag: '🇷🇺' },
   { value: 'ko-KR', label: '한국어', shortLabel: '한국어', flag: '🇰🇷' }
@@ -528,6 +459,7 @@ const toggleLanguageMenu = () => {
 const selectLanguage = (lang: string) => {
   locale.value = lang
   localStorage.setItem('locale', lang)
+  localStorage.setItem('localeExplicitlySelected', 'true')
   showLanguageMenu.value = false
   MessagePlugin.success(t('language.languageSaved'))
 }
@@ -913,62 +845,6 @@ onMounted(async () => {
   font-size: 14px;
   font-weight: 500;
   font-family: var(--app-font-family);
-}
-
-/* Carousel */
-.carousel-container {
-  width: 100%;
-  margin-top: 48px;
-}
-
-.screenshot-swiper {
-  width: 100%;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  padding-bottom: 40px;
-
-  :deep(.swiper-wrapper) {
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  :deep(.swiper-pagination) {
-    bottom: 15px !important;
-    z-index: 10;
-  }
-
-  :deep(.swiper-pagination-bullet) {
-    width: 10px;
-    height: 10px;
-    background: rgba(255, 255, 255, 0.5);
-    opacity: 1;
-    transition: all 0.3s ease;
-    margin: 0 6px !important;
-  }
-
-  :deep(.swiper-pagination-bullet-active) {
-    background: var(--td-bg-color-container);
-    width: 28px;
-    border-radius: 5px;
-  }
-}
-
-.slide-content {
-  width: 100%;
-  height: 100%;
-  background: var(--td-bg-color-container);
-  border-radius: 16px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.slide-image {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: contain;
 }
 
 /* Right Form Section */
@@ -1386,10 +1262,6 @@ onMounted(async () => {
     margin-bottom: 24px;
   }
 
-  .carousel-container {
-    margin-top: 24px;
-  }
-
   .form-section {
     flex: 0 0 auto;
     padding: 24px;
@@ -1482,12 +1354,229 @@ onMounted(async () => {
     display: none;
   }
 }
+
+/* KDL / Deep Office skin */
+.login-layout {
+  min-height: 100vh;
+  background: #111;
+  color: #f7f7f7;
+
+  &::before {
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0, rgba(255, 255, 255, 0) 32%),
+      radial-gradient(circle at 18% 88%, rgba(63, 130, 246, 0.16) 0, transparent 30%),
+      radial-gradient(circle at 92% 14%, rgba(255, 255, 255, 0.08) 0, transparent 24%);
+  }
+}
+
+.animated-bg {
+  display: none;
+}
+
+.header-logo {
+  top: 30px;
+  left: 44px;
+  cursor: default;
+
+  .logo-image {
+    width: 186px;
+  }
+}
+
+.header-links {
+  top: 26px;
+  right: 32px;
+}
+
+.header-link {
+  border-radius: 9px;
+  background: #242424;
+  border-color: #3c3c3c;
+  color: #f2f2f2;
+  box-shadow: none;
+
+  &:hover {
+    background: #303030;
+    border-color: #5a5a5a;
+  }
+}
+
+.showcase-section {
+  flex-basis: 56%;
+  align-items: flex-end;
+  padding: 120px 40px 86px 68px;
+}
+
+.showcase-content {
+  max-width: 620px;
+  margin-bottom: 0;
+}
+
+.showcase-logo {
+  width: 280px;
+  max-width: min(70vw, 280px);
+  margin-bottom: 34px;
+}
+
+.showcase-title {
+  margin: 0 0 14px;
+  color: #fff;
+  font-size: 52px;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: 0;
+  font-family: var(--app-font-family);
+}
+
+.showcase-subtitle {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.showcase-description {
+  max-width: 460px;
+  color: rgba(255, 255, 255, 0.64);
+}
+
+.tag {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 7px;
+  color: #dbeafe;
+}
+
+.form-section {
+  flex-basis: 44%;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 96px 72px 72px 24px;
+}
+
+.form-panel {
+  max-width: 424px;
+  margin-bottom: 0;
+}
+
+.form-card {
+  background: #2b2b2b;
+  border: 1px solid #6a6a6a;
+  border-radius: 16px;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.42);
+  padding: 42px;
+}
+
+.form-header {
+  text-align: left;
+}
+
+.form-title {
+  color: #fff;
+  font-size: 27px;
+  line-height: 1.32;
+}
+
+.form-welcome,
+.form-subtitle,
+.form-footer,
+.login-features .feature-item {
+  color: rgba(255, 255, 255, 0.66);
+}
+
+.form-content {
+  :deep(.t-form-item__label) {
+    color: rgba(255, 255, 255, 0.78);
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.78);
+    opacity: 1;
+    font-weight: 600;
+  }
+
+  :deep(.t-input) {
+    background: #1f1f1f;
+    border-color: #595959;
+
+    &:hover,
+    &:focus-within {
+      border-color: #3f82f6;
+      box-shadow: 0 0 0 3px rgba(63, 130, 246, 0.16);
+    }
+
+    .t-input__inner {
+      color: #fff;
+      -webkit-text-fill-color: #fff;
+      caret-color: #fff;
+    }
+  }
+}
+
+.submit-button {
+  background: #3f82f6;
+  border-color: #3f82f6;
+  font-weight: 600;
+
+  &:hover {
+    background: #2563eb;
+    border-color: #2563eb;
+  }
+}
+
+.oidc-button {
+  color: #e5e7eb;
+  background: #111827;
+  border-color: #374151;
+}
+
+.oidc-divider {
+  span {
+    background: #2b2b2b;
+  }
+}
+
+@media (max-width: 1024px) {
+  .header-logo .logo-image {
+    width: 158px;
+  }
+
+  .showcase-title {
+    font-size: 42px;
+  }
+
+  .form-section {
+    padding-right: 36px;
+  }
+}
+
+@media (max-width: 768px) {
+  .login-layout {
+    min-height: 100vh;
+  }
+
+  .showcase-section {
+    min-height: auto;
+    padding: 96px 28px 28px;
+  }
+
+  .form-section {
+    padding: 24px 28px 40px;
+  }
+
+  .showcase-logo {
+    width: 220px;
+  }
+
+  .showcase-title {
+    font-size: 34px;
+  }
+
+  .form-panel {
+    max-width: 100%;
+  }
+}
 </style>
 
 <style lang="less">
 html[theme-mode="dark"] {
   .login-layout {
-    background: linear-gradient(225deg, #011a14 0%, #032e22 15%, #043a2c 25%, #05503d 38%, #046647 50%, #038a56 65%, #049b60 78%, #06a06a 90%, #07b074 100%);
+    background: #111;
   }
 
   .knowledge-node {
@@ -1500,20 +1589,16 @@ html[theme-mode="dark"] {
     stroke: rgba(255, 255, 255, 0.25);
   }
 
-  .header-logo .logo-image {
-    filter: invert(1) hue-rotate(180deg) brightness(1.1);
-  }
-
   .header-link {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.15);
-    &:hover { background: rgba(255, 255, 255, 0.2); }
+    background: #242424;
+    border-color: #3c3c3c;
+    &:hover { background: #303030; }
   }
 
   .language-switch button {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.15);
-    &:hover { background: rgba(255, 255, 255, 0.2); }
+    background: #242424;
+    border-color: #3c3c3c;
+    &:hover { background: #303030; }
   }
 
   .language-dropdown {
@@ -1536,12 +1621,91 @@ html[theme-mode="dark"] {
     &:focus-within { border-color: var(--td-brand-color) !important; }
   }
 
-  .screenshot-swiper .swiper-pagination-bullet-active {
-    background: rgba(255, 255, 255, 0.9) !important;
-  }
-
   .login-features .feature-icon {
     background: rgba(6, 176, 77, 0.15);
+  }
+}
+
+.login-layout {
+  .form-content {
+    .t-form,
+    .t-form-item,
+    .t-form-item__label,
+    .t-form-item__label *,
+    .t-form__label,
+    .t-form__label *,
+    label,
+    [class*="label"] {
+      color: #f8fafc !important;
+      -webkit-text-fill-color: #f8fafc !important;
+      opacity: 1 !important;
+      filter: none !important;
+    }
+
+    .t-form-item__label {
+      color: #f8fafc !important;
+      -webkit-text-fill-color: #f8fafc !important;
+      font-weight: 650 !important;
+
+      label {
+        color: #f8fafc !important;
+        -webkit-text-fill-color: #f8fafc !important;
+      }
+    }
+
+    .t-form__label--required-mark::before,
+    .t-form-item__label--required::before {
+      color: #ff6b7a !important;
+    }
+
+    .t-input {
+      background: #1f1f1f !important;
+      border-color: #6b7280 !important;
+      color: #ffffff !important;
+
+      &:hover {
+        border-color: #9ca3af !important;
+      }
+
+      &.t-is-focused,
+      &:focus-within {
+        border-color: #3f82f6 !important;
+        box-shadow: 0 0 0 3px rgba(63, 130, 246, 0.18) !important;
+      }
+    }
+
+    .t-input__inner,
+    .t-input input,
+    input.t-input__inner {
+      color: #ffffff !important;
+      -webkit-text-fill-color: #ffffff !important;
+      caret-color: #ffffff !important;
+      background: transparent !important;
+    }
+
+    .t-input__inner::placeholder,
+    .t-input input::placeholder,
+    input.t-input__inner::placeholder {
+      color: rgba(255, 255, 255, 0.42) !important;
+      -webkit-text-fill-color: rgba(255, 255, 255, 0.42) !important;
+      opacity: 1 !important;
+    }
+
+    .t-input__prefix,
+    .t-input__suffix,
+    .t-input__suffix-icon,
+    .t-input__suffix .t-icon,
+    .t-input__password-icon {
+      color: rgba(255, 255, 255, 0.62) !important;
+    }
+
+    .t-input__prefix svg,
+    .t-input__suffix svg,
+    .t-input__suffix-icon svg,
+    .t-input__password-icon svg {
+      color: rgba(255, 255, 255, 0.62) !important;
+      stroke: currentColor !important;
+    }
   }
 }
 </style>

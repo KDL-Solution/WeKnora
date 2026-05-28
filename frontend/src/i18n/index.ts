@@ -11,14 +11,17 @@ const messages = {
   'ko-KR': koKR
 }
 
-// Получаем сохраненный язык из localStorage или используем китайский по умолчанию
-const savedLocale = localStorage.getItem('locale') || 'zh-CN'
-console.log('i18n инициализация с языком:', savedLocale)
+const defaultLocale = 'ko-KR'
+const storedLocale = localStorage.getItem('locale')
+const localeExplicitlySelected = localStorage.getItem('localeExplicitlySelected') === 'true'
+const savedLocale = storedLocale && (localeExplicitlySelected || storedLocale !== 'zh-CN') ? storedLocale : defaultLocale
+localStorage.setItem('locale', savedLocale)
+console.log('i18n initialized with locale:', savedLocale)
 
 const i18n = createI18n({
   legacy: false,
   locale: savedLocale,
-  fallbackLocale: 'zh-CN',
+  fallbackLocale: 'ko-KR',
   globalInjection: true,
   // Some translations intentionally embed `<strong>` markup (e.g. agent step summaries).
   // We render them via v-html with our own sanitization, so silence vue-i18n's HTML warning

@@ -523,7 +523,7 @@ const formatDate = (dateStr: string | undefined) => {
 
   try {
     const date = new Date(dateStr)
-    const formatter = new Intl.DateTimeFormat(locale.value || 'zh-CN', {
+    const formatter = new Intl.DateTimeFormat(locale.value || 'ko-KR', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',

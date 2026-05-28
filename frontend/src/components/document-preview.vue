@@ -1,6 +1,7 @@
 // @ts-nocheck
 <script setup lang="ts">
-import { ref, shallowRef, watch, onUnmounted, nextTick, defineAsyncComponent } from 'vue';
+// @ts-nocheck
+import { computed, ref, shallowRef, watch, onUnmounted, nextTick, defineAsyncComponent } from 'vue';
 import { previewKnowledgeFile } from '@/api/knowledge-base/index';
 import { MessagePlugin } from 'tdesign-vue-next';
 import hljs from 'highlight.js';
@@ -12,6 +13,7 @@ import { sanitizeHTML, safeMarkdownToHTML } from '@/utils/security';
 
 
 const VueOfficePptx = defineAsyncComponent(() => import('@vue-office/pptx'));
+const PdfJsPreview = defineAsyncComponent(() => import('./pdf-js-preview.vue'));
 
 const { t } = useI18n();
 
@@ -20,6 +22,10 @@ const props = defineProps<{
   fileType: string;
   fileName: string;
   active: boolean;
+  initialPage?: number | string;
+  pdfPages?: number[];
+  pdfBboxes?: Array<Record<string, unknown>>;
+  pdfElements?: Array<Record<string, unknown>>;
 }>();
 
 const loading = ref(false);
@@ -31,12 +37,31 @@ const highlightedCode = ref('');
 const markdownHtml = ref('');
 const excelHtml = ref('');
 const pptxData = shallowRef<ArrayBuffer | null>(null);
+const pdfData = shallowRef<ArrayBuffer | null>(null);
 const docxContainer = ref<HTMLElement | null>(null);
 const imageNaturalWidth = ref(0);
 const imageNaturalHeight = ref(0);
 let loadedForId = '';
+const pdfRenderMode = ref<'browser' | 'grounded'>('browser');
 
 const isFullscreen = ref(false);
+
+const pdfIframeSrc = computed(() => {
+  if (!blobUrl.value) return '';
+  const page = Number(props.initialPage || 0);
+  if (!Number.isFinite(page) || page < 1) return blobUrl.value;
+  return `${blobUrl.value}#page=${page}`;
+});
+
+const shouldUsePdfJs = computed(() => (
+  previewType.value === 'pdf'
+  && blobUrl.value
+  && (
+    (Array.isArray(props.pdfPages) && props.pdfPages.length > 0)
+    || (Array.isArray(props.pdfBboxes) && props.pdfBboxes.length > 0)
+    || (Array.isArray(props.pdfElements) && props.pdfElements.length > 0)
+  )
+));
 
 function toggleFullscreen() {
   isFullscreen.value = !isFullscreen.value;
@@ -45,6 +70,10 @@ function toggleFullscreen() {
   } else {
     document.body.style.overflow = '';
   }
+}
+
+function setPdfRenderMode(mode: 'browser' | 'grounded') {
+  pdfRenderMode.value = mode;
 }
 
 
@@ -274,6 +303,13 @@ async function loadPreview() {
 
     switch (previewType.value) {
       case 'pdf': {
+        if (
+          (Array.isArray(props.pdfPages) && props.pdfPages.length > 0)
+          || (Array.isArray(props.pdfBboxes) && props.pdfBboxes.length > 0)
+          || (Array.isArray(props.pdfElements) && props.pdfElements.length > 0)
+        ) {
+          pdfData.value = await blob.arrayBuffer();
+        }
         blobUrl.value = URL.createObjectURL(blob);
         break;
       }
@@ -324,6 +360,8 @@ function cleanup() {
   markdownHtml.value = '';
   excelHtml.value = '';
   pptxData.value = null;
+  pdfData.value = null;
+  pdfRenderMode.value = 'browser';
   imageNaturalWidth.value = 0;
   imageNaturalHeight.value = 0;
   loadedForId = '';
@@ -385,7 +423,35 @@ onUnmounted(() => {
 
     <!-- PDF -->
     <div v-else-if="previewType === 'pdf' && blobUrl" class="preview-pdf">
-      <iframe :src="blobUrl" class="pdf-iframe" />
+      <div v-if="shouldUsePdfJs" class="pdf-mode-toggle">
+        <t-button
+          size="small"
+          :theme="pdfRenderMode === 'browser' ? 'primary' : 'default'"
+          :variant="pdfRenderMode === 'browser' ? 'base' : 'outline'"
+          @click="setPdfRenderMode('browser')"
+        >
+          문서 보기
+        </t-button>
+        <t-button
+          size="small"
+          :theme="pdfRenderMode === 'grounded' ? 'primary' : 'default'"
+          :variant="pdfRenderMode === 'grounded' ? 'base' : 'outline'"
+          @click="setPdfRenderMode('grounded')"
+        >
+          근거 박스
+        </t-button>
+      </div>
+      <PdfJsPreview
+        v-if="shouldUsePdfJs && pdfRenderMode === 'grounded'"
+        :blob-url="blobUrl"
+        :pdf-data="pdfData"
+        :file-name="fileName"
+        :initial-page="initialPage"
+        :pages="pdfPages"
+        :bboxes="pdfBboxes"
+        :elements="pdfElements"
+      />
+      <iframe v-else :src="pdfIframeSrc" class="pdf-iframe" />
     </div>
 
     <!-- Image -->
@@ -597,9 +663,25 @@ onUnmounted(() => {
 
 // ── PDF ──
 .preview-pdf {
+  position: relative;
   width: 100%;
   height: @preview-max-h;
   min-height: 500px;
+
+  .pdf-mode-toggle {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    z-index: 12;
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.1);
+  }
+
   .pdf-iframe {
     width: 100%;
     height: 100%;

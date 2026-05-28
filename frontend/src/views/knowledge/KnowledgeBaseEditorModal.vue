@@ -354,7 +354,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, updateKnowledgeBase, rebuildKBIndex } from '@/api/knowledge-base'
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
@@ -434,6 +434,31 @@ const DEFAULT_CHUNKING_PRESET = {
   enableParentChild: true,
 } as const
 
+const DEEP_PARSER_ENGINE = 'deep_parser'
+const BUILTIN_DOCREADER_ENGINE = 'builtin'
+const DEEP_OFFICE_BUILTIN_DOCREADER_TYPES = ['md', 'markdown', 'xlsx', 'xls', 'csv', 'txt']
+const DEEP_OFFICE_DEEP_PARSER_TYPES = [
+  'pdf',
+  'doc',
+  'docx',
+  'ppt',
+  'pptx',
+  'hwp',
+  'hwpx',
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'bmp',
+  'tiff',
+  'webp'
+]
+
+const defaultDeepOfficeParserEngineRules = () => [
+  { file_types: [...DEEP_OFFICE_DEEP_PARSER_TYPES], engine: DEEP_PARSER_ENGINE },
+  { file_types: [...DEEP_OFFICE_BUILTIN_DOCREADER_TYPES], engine: BUILTIN_DOCREADER_ENGINE }
+]
+
 const navItems = computed(() => {
   const items: { key: string; icon: string; label: string; badge?: number }[] = [
     { key: 'basic', icon: 'info-circle', label: t('knowledgeEditor.sidebar.basic') },
@@ -507,7 +532,7 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
       // Aligned with chunker.DefaultChunkOverlap on the backend.
       chunkOverlap: 80,
       separators: ['\n\n', '\n', '。', '！', '？', ';', '；'],
-      parserEngineRules: undefined as any,
+      parserEngineRules: type === 'document' ? defaultDeepOfficeParserEngineRules() : undefined as any,
       enableParentChild: true,
       parentChunkSize: 4096,
       childChunkSize: 384,
@@ -1157,6 +1182,20 @@ const handleClose = () => {
   }, 300)
 }
 
+const handleEscape = (event: KeyboardEvent) => {
+  if (event.key !== 'Escape' || !props.visible) return
+  event.preventDefault()
+  handleClose()
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleEscape)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleEscape)
+})
+
 // 监听弹窗打开/关闭
 watch(() => props.visible, async (newVal) => {
   if (newVal) {
@@ -1387,7 +1426,7 @@ watch(
   }
 
   .section-body {
-    background: var(--td-bg-color-container);
+    background: transparent;
   }
 }
 
@@ -1626,4 +1665,3 @@ watch(
   }
 }
 </style>
-

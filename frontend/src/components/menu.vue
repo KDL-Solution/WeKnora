@@ -3,7 +3,7 @@
         <!-- 展开时：Logo + 折叠按钮同行 -->
         <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
             <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
-                <img class="logo" src="@/assets/img/weknora.png" alt="">
+                <img class="logo" src="@/assets/img/kdl-logo-with-text.png" alt="Deep Office">
                 <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
             </div>
             <div class="sidebar-toggle" @click="uiStore.toggleSidebar" :title="t('menu.collapseSidebar')">
@@ -744,7 +744,7 @@ watch([() => route.name, () => route.params], (newvalue, oldvalue) => {
         }
     }
 });
-let knowledgeIcon = ref('zhishiku-green.svg');
+let knowledgeIcon = ref('zhishiku.svg');
 let prefixIcon = ref('prefixIcon.svg');
 let logoutIcon = ref('logout.svg');
 let settingIcon = ref('setting.svg');
@@ -752,27 +752,12 @@ let agentIcon = ref('agent.svg');
 let organizationIcon = ref('organization.svg');
 let pathPrefix = ref(route.name)
 const getIcon = (path: string) => {
-    // 根据当前路由状态更新所有图标
-    const kbActiveState = getIconActiveState('knowledge-bases');
-    const creatChatActiveState = getIconActiveState('creatChat');
-    const settingsActiveState = getIconActiveState('settings');
-    const agentsActiveState = route.name === 'agentList';
-    const organizationsActiveState = route.name === 'organizationList';
-
-    // 知识库图标：只在知识库页面显示绿色
-    knowledgeIcon.value = kbActiveState.isKbActive ? 'zhishiku-green.svg' : 'zhishiku.svg';
-
-    // 智能体图标：只在智能体页面显示绿色
-    agentIcon.value = agentsActiveState ? 'agent-green.svg' : 'agent.svg';
-
-    // 组织图标：只在组织页面显示绿色
-    organizationIcon.value = organizationsActiveState ? 'organization-green.svg' : 'organization.svg';
-
-    // 对话图标：只在对话创建页面显示绿色，其他情况显示默认
-    prefixIcon.value = creatChatActiveState.isCreatChatActive ? 'prefixIcon-green.svg' : 'prefixIcon.svg';
-
-    // 设置图标：只在设置页面显示绿色
-    settingIcon.value = settingsActiveState.isSettingsActive ? 'setting-green.svg' : 'setting.svg';
+    // Keep active items styled by the sidebar state instead of swapping in colored SVG assets.
+    knowledgeIcon.value = 'zhishiku.svg';
+    agentIcon.value = 'agent.svg';
+    organizationIcon.value = 'organization.svg';
+    prefixIcon.value = 'prefixIcon.svg';
+    settingIcon.value = 'setting.svg';
 
     // 退出图标：始终显示默认
     logoutIcon.value = 'logout.svg';
@@ -882,7 +867,8 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     min-width: 260px;
     width: 260px;
     padding: 8px 6px 6px;
-    background: var(--td-bg-color-sidebar);
+    background: #111;
+    color: #e5e7eb;
     box-sizing: border-box;
     /* Avoid 100vh because <html> carries a `zoom` multiplier for font-size
        control; 100vh is evaluated against the unscaled viewport and then
@@ -892,8 +878,8 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--td-component-stroke);
-    box-shadow: 1px 0 0 rgba(0, 0, 0, 0.02);
+    border-right: 1px solid #2b2b2b;
+    box-shadow: 1px 0 0 rgba(255, 255, 255, 0.02);
     transition: width 0.25s ease, min-width 0.25s ease;
     position: relative;
 
@@ -944,14 +930,14 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         height: 36px;
         flex-shrink: 0;
         cursor: pointer;
-        color: var(--td-text-color-secondary);
+        color: rgba(255, 255, 255, 0.72);
         border-radius: 4px;
         transition: background-color 0.2s ease;
         box-sizing: border-box;
 
         &:hover {
-            background: var(--td-bg-color-container-hover);
-            color: var(--td-text-color-primary);
+            background: #1f2937;
+            color: #fff;
         }
     }
 
@@ -965,7 +951,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         z-index: 10;
 
         &:hover {
-            background: var(--td-brand-color-light);
+            background: rgba(63, 130, 246, 0.22);
         }
     }
 
@@ -977,7 +963,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         overflow: hidden;
 
         .logo {
-            width: 134px;
+            width: 176px;
             height: auto;
         }
 
@@ -987,7 +973,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
             margin-top: 2px;
             font-size: 9px;
             font-weight: 600;
-            color: var(--td-text-color-placeholder);
+            color: rgba(255, 255, 255, 0.58);
             user-select: none;
             white-space: nowrap;
         }
@@ -1002,7 +988,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
 
     .logo_txt {
         transform: rotate(0.049deg);
-        color: var(--td-text-color-primary);
+        color: #f8fafc;
         font-family: "TencentSans";
         font-size: 24.12px;
         font-style: normal;
@@ -1044,32 +1030,32 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     }
 
     .upload-file-wrap:hover {
-        background-color: var(--td-brand-color-light);
-        color: var(--td-brand-color);
+        background-color: rgba(63, 130, 246, 0.16);
+        color: #60a5fa;
 
     }
 
     .upload-file-icon {
         width: 20px;
         height: 20px;
-        color: var(--td-text-color-secondary);
+        color: rgba(255, 255, 255, 0.72);
     }
 
     .active-upload {
-        color: var(--td-brand-color);
+        color: #60a5fa;
     }
 
     .menu_item_active {
         border-radius: 4px;
-        background: var(--td-brand-color-light) !important;
+        background: rgba(63, 130, 246, 0.16) !important;
 
         .menu_icon,
         .menu_title {
-            color: var(--td-brand-color) !important;
+            color: #60a5fa !important;
         }
 
         .menu-create-hint {
-            color: var(--td-brand-color) !important;
+            color: #60a5fa !important;
             opacity: 1;
         }
     }
@@ -1078,7 +1064,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
 
         .menu_icon,
         .menu_title {
-            color: var(--td-text-color-primary);
+            color: #f8fafc;
         }
     }
 
@@ -1107,11 +1093,11 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
 
         &:hover {
             border-radius: 4px;
-            background: var(--td-bg-color-container-hover);
+            background: #1f2937;
 
             .menu_icon,
             .menu_title {
-                color: var(--td-text-color-primary);
+                color: #fff;
             }
         }
     }
@@ -1119,17 +1105,19 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     .menu_icon {
         display: flex;
         margin-right: 8px;
-        color: var(--td-text-color-secondary);
+        color: rgba(255, 255, 255, 0.72);
 
         .icon {
             width: 18px;
             height: 18px;
             overflow: hidden;
+            filter: invert(1);
+            opacity: 0.72;
         }
     }
 
     .menu_title {
-        color: var(--td-text-color-primary);
+        color: rgba(255, 255, 255, 0.84);
         text-overflow: ellipsis;
         font-family: var(--app-font-family);
         font-size: 14px;
@@ -1196,7 +1184,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         font-family: var(--app-font-family);
         font-size: 11px;
         font-weight: 600;
-        color: var(--td-text-color-disabled);
+        color: rgba(255, 255, 255, 0.42);
         padding: 6px 14px 3px 14px;
         margin-top: 4px;
         line-height: 17px;
@@ -1220,7 +1208,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         cursor: pointer;
         display: flex;
         align-items: center;
-        color: var(--td-text-color-primary);
+        color: rgba(255, 255, 255, 0.78);
         font-weight: 400;
         line-height: 19px;
         height: 30px;
@@ -1245,7 +1233,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         .menu-more {
             display: inline-block;
             font-weight: bold;
-            color: var(--td-brand-color);
+            color: #60a5fa;
         }
 
         .sub_title {
@@ -1253,12 +1241,12 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         }
 
         &:hover {
-            background: var(--td-bg-color-container-hover);
-            color: var(--td-text-color-primary);
+            background: #1f2937;
+            color: #fff;
             border-radius: 6px;
 
             .menu-more {
-                color: var(--td-text-color-primary);
+                color: #fff;
             }
 
             .menu-more-wrap {
@@ -1268,12 +1256,12 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     }
 
     .submenu_item_active {
-        background: var(--td-brand-color-light) !important;
-        color: var(--td-brand-color) !important;
+        background: rgba(63, 130, 246, 0.16) !important;
+        color: #60a5fa !important;
         border-radius: 6px;
 
         .menu-more {
-            color: var(--td-brand-color) !important;
+            color: #60a5fa !important;
         }
 
         .menu-more-wrap {
@@ -1288,12 +1276,55 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     }
 
     .submenu_item_selected {
-        background: rgba(7, 192, 95, 0.05) !important;
+        background: rgba(63, 130, 246, 0.16) !important;
         border-radius: 6px;
     }
 
     .batch-checkbox {
         flex-shrink: 0;
+    }
+
+    :deep(.tenant-trigger),
+    :deep(.user-button) {
+        background: transparent;
+        border-color: #2b2b2b;
+        color: #e5e7eb;
+
+        &:hover {
+            background: #1f2937;
+            border-color: #374151;
+        }
+    }
+
+    :deep(.tenant-label),
+    :deep(.user-email),
+    :deep(.user-tenant-meta),
+    :deep(.user-tenant-meta-name),
+    :deep(.user-tenant-meta-sep),
+    :deep(.dropdown-icon) {
+        color: rgba(255, 255, 255, 0.62) !important;
+    }
+
+    :deep(.tenant-name),
+    :deep(.user-name),
+    :deep(.user-tenant-name) {
+        color: #f8fafc !important;
+    }
+
+    :deep(.tenant-switch-icon),
+    :deep(.user-tenant-meta-icon),
+    :deep(.user-tenant-meta-role) {
+        color: #93c5fd !important;
+    }
+
+    :deep(.menu-cmdk-hint) {
+        color: rgba(255, 255, 255, 0.54) !important;
+    }
+
+    :deep(.menu-cmdk-hint kbd) {
+        background: #1f2937 !important;
+        border-color: #374151 !important;
+        color: rgba(255, 255, 255, 0.7) !important;
     }
 }
 
@@ -1301,14 +1332,14 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     margin-left: auto;
     margin-right: 8px;
     font-size: 13px;
-    color: var(--td-text-color-disabled);
+    color: rgba(255, 255, 255, 0.5);
     cursor: pointer;
     flex-shrink: 0;
     transition: color 0.2s ease;
     font-weight: 400;
 
     &:hover {
-        color: var(--td-text-color-primary);
+        color: #f8fafc;
     }
 }
 
@@ -1318,21 +1349,29 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     align-items: center;
     justify-content: space-between;
     padding: 6px 12px;
-    border-top: 1px solid var(--td-component-stroke);
-    background: var(--td-bg-color-container);
+    border-top: 1px solid #2b2b2b;
+    background: #111827;
 
     .batch-footer-left {
         display: flex;
         align-items: center;
         font-size: 13px;
-        color: var(--td-text-color-placeholder);
+        color: rgba(255, 255, 255, 0.62);
+    }
+
+    :deep(.t-checkbox__label) {
+        color: rgba(255, 255, 255, 0.72) !important;
+    }
+
+    :deep(.t-checkbox__input) {
+        border-color: #4b5563 !important;
     }
 }
 
 /* 知识库下拉菜单样式 */
 .kb-dropdown-icon {
     margin-left: auto;
-    color: var(--td-text-color-secondary);
+    color: rgba(255, 255, 255, 0.62);
     transition: transform 0.3s ease, color 0.2s ease;
     cursor: pointer;
     display: flex;
@@ -1346,15 +1385,15 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     }
 
     &:hover {
-        color: var(--td-brand-color);
+        color: #60a5fa;
     }
 
     &.active {
-        color: var(--td-brand-color);
+        color: #60a5fa;
     }
 
     &.active:hover {
-        color: var(--td-brand-color-active);
+        color: #93c5fd;
     }
 
     svg {
@@ -1415,7 +1454,7 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     margin-left: auto;
     margin-right: 6px;
     font-size: 15px;
-    color: var(--td-brand-color);
+    color: #60a5fa;
     opacity: 0.7;
     transition: opacity 0.2s ease;
     flex-shrink: 0;
@@ -1443,10 +1482,10 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
         font-family: inherit;
         line-height: 14px;
         text-align: center;
-        background: var(--td-bg-color-secondarycontainer);
-        border: 1px solid var(--td-component-stroke);
+        background: #1f2937;
+        border: 1px solid #374151;
         border-radius: 3px;
-        color: var(--td-text-color-secondary);
+        color: rgba(255, 255, 255, 0.7);
     }
 }
 
@@ -1474,15 +1513,15 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
 }
 </style>
 <style lang="less">
-// Dark mode: invert dark logo to light
+// KDL logo asset is already light-on-transparent.
 html[theme-mode="dark"] .aside_box .logo_box .logo {
-    filter: invert(1) hue-rotate(180deg);
+    filter: none;
 }
 
-// Dark mode: make SVG icons match text color (loaded via <img>, currentColor won't work)
+// Make SVG icons match the dark sidebar text color (loaded via <img>, currentColor won't work)
 html[theme-mode="dark"] .aside_box .menu_icon img.icon {
     filter: invert(1);
-    opacity: 0.55;
+    opacity: 0.72;
 }
 
 // Hover state: brighter icon like text
@@ -1495,10 +1534,10 @@ html[theme-mode="dark"] .aside_box .menu_item_c_active .menu_icon img.icon {
     opacity: 0.9;
 }
 
-// Active (green) icons should not be inverted
+// Active icons follow the dark sidebar foreground color.
 html[theme-mode="dark"] .aside_box .menu_item_active .menu_icon img.icon {
-    filter: none;
-    opacity: 1;
+    filter: invert(1);
+    opacity: 0.92;
 }
 
 // 下拉菜单样式已统一至 @/assets/dropdown-menu.less

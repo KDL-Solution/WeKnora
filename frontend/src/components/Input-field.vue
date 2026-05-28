@@ -189,6 +189,24 @@ const agentKnowledgeBases = computed(() => {
   return currentAgentConfig.value?.knowledge_bases || [];
 });
 
+type KnowledgeBaseListItem = {
+  id: string;
+  name: string;
+  type?: string;
+  knowledge_count?: number;
+  chunk_count?: number;
+  embedding_model_id?: string;
+  summary_model_id?: string;
+  org_name?: string;
+  capabilities?: Partial<ScopeCapabilities>;
+  indexing_strategy?: {
+    vector_enabled?: boolean;
+    keyword_enabled?: boolean;
+    wiki_enabled?: boolean;
+    graph_enabled?: boolean;
+  };
+};
+
 // 智能体的知识库选择模式
 const agentKBSelectionMode = computed(() => {
   if (!hasAgentConfig.value) return null; // null 表示不受智能体控制
@@ -196,7 +214,7 @@ const agentKBSelectionMode = computed(() => {
 });
 
 // 共享智能体下的知识库列表（来自 listKnowledgeBases(agent_id)），用于已选知识库展示与 org 角标
-const sharedAgentKbList = ref<Array<{ id: string; name: string; type?: string; knowledge_count?: number; chunk_count?: number }>>([]);
+const sharedAgentKbList = ref<KnowledgeBaseListItem[]>([]);
 
 // 当智能体改变时，模型、网络搜索、可@知识库列表均跟随新智能体配置
 // 知识库：用新智能体配置的列表替换当前选中，使已选与可@列表一致（含共享智能体）
@@ -311,8 +329,31 @@ const kbToScopeCaps = (kb: any): Partial<ScopeCapabilities> => {
   };
 };
 
+const hasPositiveCount = (value: unknown): boolean => {
+  const count = Number(value ?? 0);
+  return Number.isFinite(count) && count > 0;
+};
+
+const kbHasContent = (kb: any): boolean =>
+  hasPositiveCount(kb?.knowledge_count) || hasPositiveCount(kb?.chunk_count);
+
+const kbHasWikiSurface = (kb: any): boolean =>
+  !!kb?.capabilities?.wiki || !!kb?.indexing_strategy?.wiki_enabled;
+
+const kbHasInitializedVectorSearch = (kb: any): boolean => {
+  if (!kb?.summary_model_id) return false;
+  const strategy = kb.indexing_strategy;
+  const needsEmbedding = !strategy || strategy.vector_enabled || strategy.keyword_enabled;
+  return !needsEmbedding || !!kb.embedding_model_id;
+};
+
+const isKnowledgeBaseUsableForChat = (kb: any): boolean => {
+  if (!kb) return false;
+  return kbHasInitializedVectorSearch(kb) || (kbHasWikiSurface(kb) && kbHasContent(kb));
+};
+
 // 当前智能体的 agent_mode（quick-answer / smart-reasoning），用于把
-// "RAG-only 模式不能 @ wiki-only 知识库"这种隐式约束带进 KB 过滤。
+// quick-answer 等模式级 KB 能力约束带进 @ 菜单过滤。
 const agentMode = computed(() => {
   if (!hasAgentConfig.value) return '';
   return currentAgentConfig.value?.agent_mode || '';
@@ -405,7 +446,7 @@ const selectedKbIds = computed(() => settingsStore.settings.selectedKnowledgeBas
 const selectedFileIds = computed(() => settingsStore.settings.selectedFiles || []);
 
 // 获取已选择的知识库信息
-const knowledgeBases = ref<Array<{ id: string; name: string; type?: 'document' | 'faq'; knowledge_count?: number; chunk_count?: number }>>([]);
+const knowledgeBases = ref<KnowledgeBaseListItem[]>([]);
 const fileList = ref<Array<{ id: string; name: string }>>([]);
 
 // 选中的知识库：包含自己的 + 组织共享的 + 共享智能体下的（用于展示已选列表与 org 角标）
@@ -550,13 +591,7 @@ const loadKnowledgeBases = async () => {
   try {
     const response: any = await listKnowledgeBases();
     if (response.data && Array.isArray(response.data)) {
-      const validKbs = response.data.filter((kb: any) => {
-        if (!kb.summary_model_id || kb.summary_model_id === '') return false
-        const strategy = kb.indexing_strategy
-        const needsEmbedding = !strategy || strategy.vector_enabled || strategy.keyword_enabled
-        if (needsEmbedding && (!kb.embedding_model_id || kb.embedding_model_id === '')) return false
-        return true
-      });
+      const validKbs = response.data.filter((kb: any) => isKnowledgeBaseUsableForChat(kb));
       knowledgeBases.value = validKbs;
 
       // 拉取共享知识库（供 @ 提及与清理选中项时识别）
@@ -2103,7 +2138,7 @@ defineExpose({
               <t-icon v-else name="file" />
             </span>
             <span v-if="item.org_name" class="mention-chip__org-badge">
-              <img :src="getImgSrc(item.type === 'file' ? 'organization-grey.svg' : 'organization-green.svg')"
+              <img :src="getImgSrc(item.type === 'file' ? 'organization-grey.svg' : 'organization-grey.svg')"
                 class="mention-chip__org-img" alt="" aria-hidden="true" />
             </span>
           </span>
@@ -2351,7 +2386,7 @@ const getImgSrc = (url: string) => {
   box-shadow: 0 6px 6px 0 rgba(0, 0, 0, 0.04), 0 12px 12px -1px rgba(0, 0, 0, 0.08);
 
   &:focus-within {
-    border-color: var(--td-brand-color, #07C05F);
+    border-color: var(--td-brand-color, #2563eb);
   }
 }
 
@@ -2459,21 +2494,21 @@ const getImgSrc = (url: string) => {
   color: var(--td-text-color-primary, #1f2937);
 }
 
-/* 知识库：浅绿/青色调 */
+/* 知识库：淡蓝色调 */
 .mention-chip--kb {
-  background: rgba(5, 192, 95, 0.08);
-  border-color: rgba(5, 192, 95, 0.25);
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.25);
   color: var(--td-text-color-primary, #1f2937);
 }
 
 .mention-chip--kb .mention-chip__icon-wrap {
-  background: rgba(5, 192, 95, 0.12);
-  color: var(--td-brand-color, #07c05f);
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--td-brand-color, #2563eb);
 }
 
 .mention-chip--kb:hover {
-  background: rgba(5, 192, 95, 0.12);
-  border-color: rgba(5, 192, 95, 0.35);
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.35);
 }
 
 /* FAQ：浅紫/靛色调 */
@@ -2516,7 +2551,7 @@ const getImgSrc = (url: string) => {
 }
 
 .mention-chip--agent.mention-chip--kb {
-  border-color: rgba(5, 192, 95, 0.4);
+  border-color: rgba(37, 99, 235, 0.4);
 }
 
 .mention-chip--agent.mention-chip--faq {
@@ -2660,11 +2695,11 @@ const getImgSrc = (url: string) => {
   position: relative;
 
   &.active {
-    background: rgba(16, 185, 129, 0.1);
+    background: rgba(37, 99, 235, 0.1);
     color: var(--td-brand-color);
 
     &:hover {
-      background: rgba(16, 185, 129, 0.15);
+      background: rgba(37, 99, 235, 0.15);
     }
   }
 
@@ -2677,7 +2712,7 @@ const getImgSrc = (url: string) => {
     }
 
     &.active:hover {
-      background: rgba(16, 185, 129, 0.1);
+      background: rgba(37, 99, 235, 0.1);
     }
   }
 }
@@ -2728,15 +2763,15 @@ const getImgSrc = (url: string) => {
   }
 
   &.active {
-    background: rgba(16, 185, 129, 0.1);
-    color: #07C05F;
+    background: rgba(37, 99, 235, 0.1);
+    color: #2563eb;
   }
 
   .image-count {
     position: absolute;
     top: -2px;
     right: -2px;
-    background: #07C05F;
+    background: #2563eb;
     color: #fff;
     font-size: 10px;
     width: 14px;
@@ -2767,15 +2802,15 @@ const getImgSrc = (url: string) => {
   }
 
   &.active {
-    background: rgba(16, 185, 129, 0.1);
-    color: #07C05F;
+    background: rgba(37, 99, 235, 0.1);
+    color: #2563eb;
   }
 
   .attachment-count {
     position: absolute;
     top: -2px;
     right: -2px;
-    background: #07C05F;
+    background: #2563eb;
     color: #fff;
     font-size: 10px;
     width: 14px;
@@ -2842,14 +2877,14 @@ const getImgSrc = (url: string) => {
   position: relative;
 
   &.active {
-    background: rgba(16, 185, 129, 0.1);
+    background: rgba(37, 99, 235, 0.1);
 
     .websearch-icon {
       color: var(--td-brand-color);
     }
 
     &:hover {
-      background: rgba(16, 185, 129, 0.15);
+      background: rgba(37, 99, 235, 0.15);
     }
   }
 
@@ -2876,7 +2911,7 @@ const getImgSrc = (url: string) => {
     }
 
     &.active:hover {
-      background: rgba(16, 185, 129, 0.1);
+      background: rgba(37, 99, 235, 0.1);
     }
   }
 }
@@ -2933,21 +2968,21 @@ const getImgSrc = (url: string) => {
   width: 28px;
   height: 28px;
   padding: 0;
-  background: rgba(16, 185, 129, 0.08);
+  background: rgba(37, 99, 235, 0.08);
   color: var(--td-brand-color);
-  border: 1.5px solid rgba(16, 185, 129, 0.2);
+  border: 1.5px solid rgba(37, 99, 235, 0.2);
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
 
   &:hover {
-    background: rgba(16, 185, 129, 0.12);
+    background: rgba(37, 99, 235, 0.12);
     border-color: var(--td-brand-color);
   }
 
   &:active {
-    background: rgba(16, 185, 129, 0.15);
+    background: rgba(37, 99, 235, 0.15);
   }
 
   svg {
@@ -3118,7 +3153,7 @@ const getImgSrc = (url: string) => {
   border-radius: 4px;
   border: .5px solid transparent;
   background: transparent;
-  color: var(--td-brand-color, #07c05f);
+  color: var(--td-brand-color, #2563eb);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -3131,7 +3166,7 @@ const getImgSrc = (url: string) => {
   }
 
   &:hover {
-    color: var(--td-brand-color-hover, #05a04f);
+    color: var(--td-brand-color-hover, #1d4ed8);
     background: var(--td-bg-color-secondarycontainer, #f3f3f3);
   }
 }
@@ -3148,11 +3183,11 @@ const getImgSrc = (url: string) => {
   }
 
   &:hover {
-    background: var(--td-bg-color-container-hover, #f6f8f7);
+    background: var(--td-bg-color-container-hover, #f8fafc);
   }
 
   &.selected {
-    background: var(--td-brand-color-light, #eefdf5);
+    background: var(--td-brand-color-light, #eff6ff);
 
     .model-option-name {
       color: var(--td-success-color);
@@ -3209,7 +3244,7 @@ const getImgSrc = (url: string) => {
 }
 
 .model-badge-remote {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(37, 99, 235, 0.1);
   color: var(--td-success-color);
 }
 
@@ -3256,7 +3291,7 @@ const getImgSrc = (url: string) => {
   margin: 4px 6px;
 
   &:hover:not(.disabled) {
-    background: var(--td-bg-color-container-hover, #f6f8f7);
+    background: var(--td-bg-color-container-hover, #f8fafc);
   }
 
   &.disabled {
@@ -3269,7 +3304,7 @@ const getImgSrc = (url: string) => {
   }
 
   &.selected {
-    background: var(--td-brand-color-light, #eefdf5);
+    background: var(--td-brand-color-light, #eff6ff);
 
     .agent-mode-option-name {
       color: var(--td-success-color);
