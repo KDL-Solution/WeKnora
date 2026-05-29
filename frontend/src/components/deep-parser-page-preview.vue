@@ -199,6 +199,15 @@ function boxStyle(box: Record<string, number>) {
   };
 }
 
+function pageImageWrapStyle(image: Record<string, unknown>) {
+  const width = Number(image?.width || 0);
+  const style: Record<string, string> = {};
+  if (width > 0) {
+    style.maxWidth = `${width}px`;
+  }
+  return style;
+}
+
 function pageLabel(page: number) {
   return `페이지 ${page}`;
 }
@@ -250,7 +259,7 @@ onUnmounted(() => {
         <div class="page-stage">
           <div v-if="loadingPages[image.page]" class="page-state">페이지 이미지를 불러오는 중입니다.</div>
           <div v-else-if="errorPages[image.page]" class="page-state error">{{ errorPages[image.page] }}</div>
-          <div v-else-if="imageUrls[image.page]" class="page-image-wrap">
+          <div v-else-if="imageUrls[image.page]" class="page-image-wrap" :style="pageImageWrapStyle(image)">
             <img :src="imageUrls[image.page]" :alt="`${fileName} ${pageLabel(image.page)}`" />
             <div class="bbox-layer" aria-hidden="true">
               <span
@@ -284,6 +293,7 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
   background: var(--td-bg-color-page);
 }
 
@@ -339,7 +349,9 @@ onUnmounted(() => {
 .page-scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 18px;
 }
 
@@ -364,17 +376,23 @@ onUnmounted(() => {
 
 .page-stage {
   display: flex;
+  align-items: flex-start;
   justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
   min-height: 360px;
   padding: 18px;
   border: 1px solid var(--td-component-stroke);
   border-radius: 6px;
   background: #e5e7eb;
+  overflow: visible;
 }
 
 .page-image-wrap {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
   max-width: 100%;
   line-height: 0;
   background: #ffffff;
@@ -383,7 +401,7 @@ onUnmounted(() => {
 
 .page-image-wrap img {
   display: block;
-  max-width: 100%;
+  width: 100%;
   height: auto;
 }
 

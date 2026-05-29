@@ -1,18 +1,23 @@
 <template>
-  <t-drawer
-    v-model:visible="visibleModel"
-    :footer="false"
-    :close-btn="true"
-    size="calc(100vw - 48px)"
-    :z-index="2300"
-    class="evidence-preview-drawer"
-  >
-    <template #header>
-      <div class="evidence-drawer-header">
-        <span class="evidence-drawer-title" :title="displayTitle">{{ displayTitle }}</span>
-        <t-tag v-if="sourceTypeLabel" size="small" theme="success" variant="light">{{ sourceTypeLabel }}</t-tag>
-      </div>
-    </template>
+  <teleport to="body">
+    <transition name="evidence-preview-fade">
+      <div
+        v-if="visibleModel"
+        ref="overlayRef"
+        class="evidence-preview-overlay"
+        tabindex="-1"
+        @click.self="closePreview"
+      >
+        <section class="evidence-preview-shell" role="dialog" aria-modal="true" :aria-label="displayTitle">
+          <header class="evidence-preview-header">
+            <div class="evidence-preview-heading">
+              <span class="evidence-preview-title" :title="displayTitle">{{ displayTitle }}</span>
+              <t-tag v-if="sourceTypeLabel" size="small" theme="success" variant="light">{{ sourceTypeLabel }}</t-tag>
+            </div>
+            <button type="button" class="evidence-close-button" aria-label="근거 보기 닫기" @click="closePreview">
+              <t-icon name="close" size="22px" />
+            </button>
+          </header>
 
     <div class="evidence-preview-layout">
       <section class="evidence-document-pane">
@@ -34,8 +39,18 @@
           </div>
         </div>
 
+        <DeepParserPagePreview
+          v-if="canRenderGroundedPreview"
+          class="evidence-grounded-preview"
+          :file-name="fileName"
+          :initial-page="primaryPage"
+          :pages="pages"
+          :page-images="pageImages"
+          :bboxes="bboxes"
+          :elements="elements"
+        />
         <DocumentPreview
-          v-if="canRenderDocument"
+          v-else-if="canRenderDocument"
           :knowledge-id="knowledgeId"
           :file-type="fileType"
           :file-name="fileName"
@@ -163,11 +178,15 @@
         </section>
       </aside>
     </div>
-  </t-drawer>
+        </section>
+      </div>
+    </transition>
+  </teleport>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
+import DeepParserPagePreview from '@/components/deep-parser-page-preview.vue';
 import DocumentPreview from '@/components/document-preview.vue';
 
 const props = defineProps({
@@ -182,10 +201,47 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:visible']);
+const overlayRef = ref(null);
 
 const visibleModel = computed({
   get: () => props.visible,
   set: value => emit('update:visible', value),
+});
+
+const closePreview = () => {
+  visibleModel.value = false;
+};
+
+const handleKeydown = event => {
+  if (event.key === 'Escape') {
+    closePreview();
+  }
+};
+
+watch(
+  visibleModel,
+  async open => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (open) {
+      window.addEventListener('keydown', handleKeydown);
+      document.body.classList.add('evidence-preview-open');
+      await nextTick();
+      overlayRef.value?.focus?.();
+      return;
+    }
+    window.removeEventListener('keydown', handleKeydown);
+    document.body.classList.remove('evidence-preview-open');
+  },
+  { immediate: true }
+);
+
+onUnmounted(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('keydown', handleKeydown);
+  }
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('evidence-preview-open');
+  }
 });
 
 const citation = computed(() => props.group?.citation || {});
@@ -220,6 +276,10 @@ const fileType = computed(() => {
   return match ? match[1].toLowerCase() : 'pdf';
 });
 
+const canRenderGroundedPreview = computed(() => (
+  fileType.value === 'pdf'
+  && pageImages.value.length > 0
+));
 const canRenderDocument = computed(() => Boolean(knowledgeId.value && fileType.value));
 const sourceUri = computed(() => sourceDocument.value.uri || props.group?.metadata?.source_uri || props.group?.knowledgeSource || '');
 const checksum = computed(() => sourceDocument.value.checksum || props.group?.metadata?.checksum || '');
@@ -381,14 +441,58 @@ const graphPathLabel = path => {
 </script>
 
 <style scoped lang="less">
-.evidence-drawer-header {
+:global(body.evidence-preview-open) {
+  overflow: hidden;
+}
+
+.evidence-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(2px);
+  overscroll-behavior: contain;
+  outline: none;
+}
+
+.evidence-preview-shell {
+  display: flex;
+  flex-direction: column;
+  width: min(1500px, calc(100vw - 56px));
+  height: min(900px, calc(100vh - 56px));
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 10px;
+  background: var(--td-bg-color-container);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+}
+
+.evidence-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-container);
+}
+
+.evidence-preview-heading {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.evidence-drawer-title {
+.evidence-preview-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -396,30 +500,49 @@ const graphPathLabel = path => {
   font-weight: 600;
 }
 
-.evidence-preview-drawer {
-  :deep(.t-drawer__content-wrapper) {
-    width: calc(100vw - 48px) !important;
-    max-width: none !important;
-  }
+.evidence-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--td-text-color-secondary);
+  background: transparent;
+  cursor: pointer;
 
-  :deep(.t-drawer__body) {
-    padding: 0;
-    overflow: hidden;
+  &:hover {
+    color: var(--td-text-color-primary);
+    background: var(--td-bg-color-secondarycontainer);
   }
+}
+
+.evidence-preview-fade-enter-active,
+.evidence-preview-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+
+.evidence-preview-fade-enter-from,
+.evidence-preview-fade-leave-to {
+  opacity: 0;
 }
 
 .evidence-preview-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(320px, 31vw, 420px);
-  height: calc(100vh - 58px);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
 .evidence-document-pane {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   border-right: 1px solid var(--td-component-stroke);
   background: var(--td-bg-color-page);
 }
@@ -452,17 +575,40 @@ const graphPathLabel = path => {
 }
 
 .evidence-document-pane :deep(.document-preview) {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   height: 100%;
+  max-height: 100%;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   background: var(--td-bg-color-container);
 }
 
 .evidence-document-pane :deep(.preview-pdf) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.evidence-document-pane :deep(.deep-parser-preview) {
+  flex: 1;
   height: 100%;
   min-height: 0;
+}
+
+.evidence-grounded-preview {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
 }
 
 .document-preview-empty {
@@ -487,7 +633,10 @@ const graphPathLabel = path => {
 
 .evidence-detail-pane {
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px;
   background: var(--td-bg-color-container);
 }
@@ -711,10 +860,11 @@ const graphPathLabel = path => {
   line-height: 18px;
 }
 
-@media (max-width: 920px) {
+@media (max-width: 1180px) {
   .evidence-preview-layout {
     grid-template-columns: 1fr;
     height: auto;
+    overflow: auto;
   }
 
   .evidence-document-pane {
