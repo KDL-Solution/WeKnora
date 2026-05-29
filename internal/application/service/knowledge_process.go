@@ -152,6 +152,22 @@ func buildDeepOfficeChunkMetadata(
 	}
 
 	chunkTextHash := deepOfficeHashText(chunk.Content)
+	elements := deepOfficeGroundingsForRange(metadata["grounding_map"], chunk.StartAt, chunk.EndAt)
+	parserGrounding := map[string]interface{}{
+		"parser_provider": deepOfficeFirstString(
+			metadata["deep_parser_provider"],
+			metadata["parser_engine"],
+			"deep_parser",
+		),
+		"parser_run_id": deepOfficeFirstString(metadata["parser_run_id"], metadata["request_id"]),
+		"elements":      elements,
+	}
+	if bboxes := deepOfficeBBoxesForElements(elements); len(bboxes) > 0 {
+		parserGrounding["bboxes"] = bboxes
+	}
+	if pageImages := deepOfficePageImagesForElements(metadata["deep_office_page_images"], elements); len(pageImages) > 0 {
+		parserGrounding["page_images"] = pageImages
+	}
 	binding := deepOfficeEvidenceBinding{
 		BindingID: deepOfficeBindingID(
 			fmt.Sprintf("%d", chunk.TenantID),
@@ -208,17 +224,9 @@ func buildDeepOfficeChunkMetadata(
 			"chunk_type":      chunk.ChunkType,
 			"parent_chunk_id": chunk.ParentChunkID,
 		},
-		ParserGrounding: map[string]interface{}{
-			"parser_provider": deepOfficeFirstString(
-				metadata["deep_parser_provider"],
-				metadata["parser_engine"],
-				"deep_parser",
-			),
-			"parser_run_id": deepOfficeFirstString(metadata["parser_run_id"], metadata["request_id"]),
-			"elements":      deepOfficeGroundingsForRange(metadata["grounding_map"], chunk.StartAt, chunk.EndAt),
-		},
-		SourceTextHash: chunkTextHash,
-		ChunkTextHash:  chunkTextHash,
+		ParserGrounding: parserGrounding,
+		SourceTextHash:  chunkTextHash,
+		ChunkTextHash:   chunkTextHash,
 	}
 
 	raw, err := json.Marshal(map[string]interface{}{deepOfficeChunkMetadataKey: binding})
@@ -295,6 +303,111 @@ func deepOfficeGroundingsForRange(raw string, start int, end int) []map[string]i
 		}
 	}
 	return matched
+}
+
+func deepOfficeBBoxesForElements(elements []map[string]interface{}) []map[string]interface{} {
+	bboxes := make([]map[string]interface{}, 0)
+	for _, element := range elements {
+		elementID, _ := element["element_id"].(string)
+		if elementID == "" {
+			continue
+		}
+		bbox, ok := element["bbox"].([]interface{})
+		if !ok || len(bbox) == 0 {
+			continue
+		}
+		bboxes = append(bboxes, map[string]interface{}{
+			"element_id": elementID,
+			"page":       element["page"],
+			"bbox":       bbox,
+		})
+	}
+	return bboxes
+}
+
+func deepOfficePageImagesForElements(raw string, elements []map[string]interface{}) []map[string]interface{} {
+	if strings.TrimSpace(raw) == "" || len(elements) == 0 {
+		return nil
+	}
+
+	pages := make(map[int]struct{})
+	for _, element := range elements {
+		page, ok := intFromInterface(element["page"])
+		if ok && page > 0 {
+			pages[page] = struct{}{}
+		}
+	}
+	if len(pages) == 0 {
+		return nil
+	}
+
+	var allImages []map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &allImages); err != nil {
+		return nil
+	}
+
+	matched := make([]map[string]interface{}, 0)
+	for _, image := range allImages {
+		page, ok := intFromInterface(image["page"])
+		if !ok {
+			continue
+		}
+		if _, found := pages[page]; !found {
+			continue
+		}
+		matched = append(matched, cloneInterfaceMap(image))
+	}
+	sort.Slice(matched, func(i, j int) bool {
+		left, _ := intFromInterface(matched[i]["page"])
+		right, _ := intFromInterface(matched[j]["page"])
+		return left < right
+	})
+	return matched
+}
+
+func attachDeepOfficePageImageStorageURLs(metadata map[string]string, storedImages []docparser.StoredImage) {
+	if metadata == nil || strings.TrimSpace(metadata["deep_office_page_images"]) == "" || len(storedImages) == 0 {
+		return
+	}
+
+	storedByRef := make(map[string]docparser.StoredImage)
+	for _, image := range storedImages {
+		if image.OriginalRef != "" {
+			storedByRef[image.OriginalRef] = image
+		}
+	}
+	if len(storedByRef) == 0 {
+		return
+	}
+
+	var pageImages []map[string]interface{}
+	if err := json.Unmarshal([]byte(metadata["deep_office_page_images"]), &pageImages); err != nil {
+		return
+	}
+
+	changed := false
+	for _, pageImage := range pageImages {
+		originalRef, _ := pageImage["original_ref"].(string)
+		stored, ok := storedByRef[originalRef]
+		if !ok || stored.ServingURL == "" {
+			continue
+		}
+		pageImage["storage_url"] = stored.ServingURL
+		pageImage["url"] = stored.ServingURL
+		if stored.MimeType != "" {
+			pageImage["mime_type"] = stored.MimeType
+		}
+		changed = true
+	}
+	if !changed {
+		return
+	}
+
+	raw, err := json.Marshal(pageImages)
+	if err != nil {
+		return
+	}
+	metadata["deep_office_page_images"] = string(raw)
 }
 
 func deepOfficeFirstString(values ...string) string {
@@ -2370,6 +2483,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 			storedImages = append(storedImages, remoteImages...)
 		}
 
+		attachDeepOfficePageImageStorageURLs(convertResult.Metadata, storedImages)
 		logger.Infof(ctx, "Resolved %d total images for knowledge %s", len(storedImages), knowledge.ID)
 	}
 

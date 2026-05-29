@@ -14,6 +14,7 @@ import { sanitizeHTML, safeMarkdownToHTML } from '@/utils/security';
 
 const VueOfficePptx = defineAsyncComponent(() => import('@vue-office/pptx'));
 const PdfJsPreview = defineAsyncComponent(() => import('./pdf-js-preview.vue'));
+const DeepParserPagePreview = defineAsyncComponent(() => import('./deep-parser-page-preview.vue'));
 
 const { t } = useI18n();
 
@@ -24,6 +25,7 @@ const props = defineProps<{
   active: boolean;
   initialPage?: number | string;
   pdfPages?: number[];
+  pdfPageImages?: Array<Record<string, unknown>>;
   pdfBboxes?: Array<Record<string, unknown>>;
   pdfElements?: Array<Record<string, unknown>>;
 }>();
@@ -55,12 +57,19 @@ const pdfIframeSrc = computed(() => {
 
 const shouldUsePdfJs = computed(() => (
   previewType.value === 'pdf'
+  && !shouldUseDeepParserPageImages.value
   && blobUrl.value
   && (
     (Array.isArray(props.pdfPages) && props.pdfPages.length > 0)
     || (Array.isArray(props.pdfBboxes) && props.pdfBboxes.length > 0)
     || (Array.isArray(props.pdfElements) && props.pdfElements.length > 0)
   )
+));
+
+const shouldUseDeepParserPageImages = computed(() => (
+  previewType.value === 'pdf'
+  && Array.isArray(props.pdfPageImages)
+  && props.pdfPageImages.length > 0
 ));
 
 function toggleFullscreen() {
@@ -294,6 +303,12 @@ async function loadPreview() {
   }
 
   try {
+    if (shouldUseDeepParserPageImages.value) {
+      loadedForId = id;
+      loading.value = false;
+      return;
+    }
+
     const rawBlob = await previewKnowledgeFile(id);
     const blob = ensureBlobType(rawBlob, ft);
     loadedForId = id;
@@ -422,7 +437,16 @@ onUnmounted(() => {
     </div>
 
     <!-- PDF -->
-    <div v-else-if="previewType === 'pdf' && blobUrl" class="preview-pdf">
+    <div v-else-if="previewType === 'pdf' && (blobUrl || shouldUseDeepParserPageImages)" class="preview-pdf">
+      <DeepParserPagePreview
+        v-if="shouldUseDeepParserPageImages"
+        :file-name="fileName"
+        :initial-page="initialPage"
+        :pages="pdfPages"
+        :page-images="pdfPageImages"
+        :bboxes="pdfBboxes"
+        :elements="pdfElements"
+      />
       <div v-if="shouldUsePdfJs" class="pdf-mode-toggle">
         <t-button
           size="small"
@@ -442,7 +466,7 @@ onUnmounted(() => {
         </t-button>
       </div>
       <PdfJsPreview
-        v-if="shouldUsePdfJs && pdfRenderMode === 'grounded'"
+        v-else-if="shouldUsePdfJs && pdfRenderMode === 'grounded'"
         :blob-url="blobUrl"
         :pdf-data="pdfData"
         :file-name="fileName"

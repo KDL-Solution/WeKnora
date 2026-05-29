@@ -32,7 +32,18 @@
                         <span class="doc-group-title" :title="group.title">{{ group.title }}</span>
                         <span class="doc-group-count">{{ $t('chat.referenceChunkCount', { count: group.chunks.length }) }}</span>
                     </div>
-                    <div class="doc-group-actions" v-if="group.knowledgeBaseId" @click.stop>
+                    <div class="doc-group-actions" v-if="canOpenDocumentPreview(group) || group.knowledgeBaseId" @click.stop>
+                        <t-button
+                            v-if="canOpenDocumentPreview(group)"
+                            theme="primary"
+                            variant="outline"
+                            size="small"
+                            class="doc-group-preview"
+                            @click.stop="openEvidencePreview(group)"
+                        >
+                            <template #icon><t-icon name="file-view" /></template>
+                            근거 페이지
+                        </t-button>
                         <t-tooltip :content="$t('chat.navigateToDocument')">
                             <span class="doc-group-navigate" @click="navigateToDocument(group)">
                                 <t-icon name="jump" size="14px" />
@@ -115,6 +126,19 @@
                         </div>
                     </div>
                 </div>
+                <button
+                    v-else-if="canOpenDocumentPreview(group)"
+                    type="button"
+                    class="doc-evidence-fallback"
+                    @click.stop="openEvidencePreview(group)"
+                >
+                    <div>
+                        <t-icon name="info-circle" size="13px" />
+                        <strong>페이지 매핑 없음</strong>
+                    </div>
+                    <span>청크는 참조됐지만 페이지 근거 metadata가 없습니다. 원문 문서와 사용된 청크를 확인하세요.</span>
+                    <em>원문 보기</em>
+                </button>
                 <div class="doc-group-chunks" v-show="expandedGroups[group.key]">
                     <div v-for="(chunk, cIdx) in group.chunks" :key="'chunk-' + cIdx" class="doc-chunk-item">
                         <t-popup overlayClassName="refer-to-layer" placement="bottom-left" width="400" :showArrow="false" trigger="click">
@@ -126,6 +150,16 @@
                                 {{ truncateContent(chunk.content, 80) }}
                             </span>
                         </t-popup>
+                        <button
+                            v-if="canOpenDocumentPreview(group)"
+                            type="button"
+                            class="doc-chunk-open"
+                            @click.stop="openChunkEvidencePreview(group, chunk)"
+                            title="이 청크의 근거 문서 보기"
+                        >
+                            <t-icon name="file-view" size="12px" />
+                            보기
+                        </button>
                     </div>
                 </div>
             </div>
@@ -296,6 +330,7 @@ const aggregateGroupCitation = (group) => {
     const sourceDocument = citations[0].source_document || {};
     const sourceLocator = {};
     const parserElementsById = new Map();
+    const pageImagesByPage = new Map();
     const pages = new Set();
     const bboxes = [];
     const chunkIds = [];
@@ -348,6 +383,14 @@ const aggregateGroupCitation = (group) => {
         if (Array.isArray(grounding.bboxes)) {
             bboxes.push(...grounding.bboxes);
         }
+        if (Array.isArray(grounding.page_images)) {
+            grounding.page_images.forEach(image => {
+                const page = Number(image?.page);
+                if (Number.isFinite(page) && page > 0 && !pageImagesByPage.has(page)) {
+                    pageImagesByPage.set(page, image);
+                }
+            });
+        }
         if (Array.isArray(citation.chunk_evidence)) {
             chunkEvidence.push(...citation.chunk_evidence);
         }
@@ -375,6 +418,9 @@ const aggregateGroupCitation = (group) => {
             pages: [...pages].sort((a, b) => a - b),
             elements: Array.from(parserElementsById.values()),
             bboxes,
+            page_images: Array.from(pageImagesByPage.entries())
+                .sort((left, right) => left[0] - right[0])
+                .map(([, image]) => image),
         },
         chunk_evidence: chunkEvidence,
         graph_evidence: aggregateGraphEvidence(graphEvidences),
@@ -433,7 +479,9 @@ const aggregateGraphEvidence = (items) => {
 
 const hasEvidence = (group) => Boolean(group?.citation || sourceUri(group) || checksum(group));
 
-const canOpenEvidencePreview = (group) => Boolean(group?.knowledgeId && hasEvidence(group));
+const canOpenDocumentPreview = (group) => Boolean(group?.knowledgeId);
+
+const canOpenEvidencePreview = (group) => canOpenDocumentPreview(group);
 
 const openEvidencePreview = (group) => {
     evidencePreviewGroup.value = group;
@@ -731,8 +779,25 @@ const graphPathLabel = (path) => {
         }
 
         .doc-group-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
             flex-shrink: 0;
             margin-left: 8px;
+        }
+
+        .doc-group-preview {
+            height: 24px;
+            padding: 0 8px;
+            font-size: 11px;
+            font-weight: 600;
+            border-color: var(--td-brand-color);
+            color: var(--td-brand-color);
+            background: var(--td-bg-color-container);
+
+            &:hover {
+                background: var(--td-brand-color-light);
+            }
         }
 
         .doc-group-navigate {
@@ -762,6 +827,59 @@ const graphPathLabel = (path) => {
         border: 1px solid var(--td-component-stroke);
         border-radius: 6px;
         background-color: var(--td-bg-color-secondarycontainer);
+    }
+
+    .doc-evidence-fallback {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 3px 8px;
+        width: calc(100% - 22px);
+        margin: 2px 0 6px 22px;
+        padding: 8px;
+        border: 1px dashed var(--td-component-stroke);
+        border-radius: 6px;
+        background: var(--td-bg-color-secondarycontainer);
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+
+        &:hover {
+            border-color: var(--td-brand-color);
+            background: rgba(37, 99, 235, 0.04);
+        }
+
+        div {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            min-width: 0;
+            color: var(--td-text-color-primary);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .t-icon {
+            color: var(--td-warning-color);
+            flex-shrink: 0;
+        }
+
+        span {
+            grid-column: 1 / 2;
+            color: var(--td-text-color-placeholder);
+            font-size: 11px;
+            line-height: 16px;
+        }
+
+        em {
+            grid-column: 2 / 3;
+            grid-row: 1 / 3;
+            align-self: center;
+            color: var(--td-brand-color);
+            font-size: 11px;
+            font-style: normal;
+            font-weight: 700;
+            white-space: nowrap;
+        }
     }
 
     .doc-evidence-title {
@@ -953,6 +1071,16 @@ const graphPathLabel = (path) => {
 }
 
 .doc-chunk-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+
+    .t-popup {
+        min-width: 0;
+        flex: 1;
+    }
+
     .doc-chunk-text {
         display: block;
         color: var(--td-text-color-secondary);
@@ -975,6 +1103,28 @@ const graphPathLabel = (path) => {
             color: var(--td-text-color-placeholder);
             font-size: 11px;
             margin-right: 4px;
+        }
+    }
+
+    .doc-chunk-open {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        flex-shrink: 0;
+        height: 22px;
+        padding: 0 6px;
+        border: 1px solid var(--td-component-stroke);
+        border-radius: 999px;
+        background: var(--td-bg-color-container);
+        color: var(--td-brand-color);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background-color 0.15s ease;
+
+        &:hover {
+            border-color: var(--td-brand-color);
+            background: var(--td-brand-color-light);
         }
     }
 }

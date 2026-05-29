@@ -42,6 +42,13 @@ func TestEnrichDeepOfficeCitations(t *testing.T) {
 							"bbox":         []float64{0.1, 0.2, 0.3, 0.4},
 						},
 					},
+					"page_images": []map[string]interface{}{
+						{
+							"page":        1,
+							"url":         "local://7/page-1.png",
+							"storage_url": "local://7/page-1.png",
+						},
+					},
 				},
 				"source_text_hash": "sha256:source-1",
 				"chunk_text_hash":  "sha256:chunk-1",
@@ -70,6 +77,13 @@ func TestEnrichDeepOfficeCitations(t *testing.T) {
 							"page":         2,
 							"layout_order": 0,
 							"bbox":         []float64{0.5, 0.6, 0.7, 0.8},
+						},
+					},
+					"page_images": []map[string]interface{}{
+						{
+							"page":        2,
+							"url":         "local://7/page-2.png",
+							"storage_url": "local://7/page-2.png",
 						},
 					},
 				},
@@ -144,6 +158,10 @@ func TestEnrichDeepOfficeCitations(t *testing.T) {
 	bboxes := parserGrounding["bboxes"].([]map[string]interface{})
 	if len(bboxes) != 2 {
 		t.Fatalf("expected 2 bboxes, got %d", len(bboxes))
+	}
+	pageImages := parserGrounding["page_images"].([]map[string]interface{})
+	if len(pageImages) != 2 {
+		t.Fatalf("expected 2 page images, got %d", len(pageImages))
 	}
 
 	chunkEvidence := card["chunk_evidence"].([]map[string]interface{})
@@ -366,6 +384,100 @@ func TestEnrichDeepOfficeCitationsFromChunkMetadataWhenBindingsFileMissing(t *te
 	}
 }
 
+func TestHydrateDeepOfficeCitationFallsBackToSharedChunkLookup(t *testing.T) {
+	t.Setenv(deepOfficeEvidenceBindingsEnv, "")
+	resetDeepOfficeCitationStoreForTest()
+	t.Cleanup(resetDeepOfficeCitationStoreForTest)
+
+	chunkMetadata := mustJSON(t, map[string]interface{}{
+		deepOfficeChunkMetadataKey: map[string]interface{}{
+			"binding_id":        "binding-shared",
+			"knowledge_id":      "knowledge-shared",
+			"knowledge_base_id": "kb-shared",
+			"weknora_chunk_id":  "chunk-shared",
+			"chunk_index":       10,
+			"source_document": map[string]interface{}{
+				"title":       "부산AI 한국딥러닝 전처리 수행 계획서",
+				"uri":         "nas://busan-ai/plan.pdf",
+				"checksum":    "sha256:document-shared",
+				"source_type": "nas_document",
+			},
+			"source_locator": map[string]interface{}{
+				"start_at":    400,
+				"end_at":      540,
+				"chunk_index": 10,
+			},
+			"parser_grounding": map[string]interface{}{
+				"parser_provider": "deep_parser",
+				"parser_run_id":   "run-shared",
+				"elements": []map[string]interface{}{
+					{
+						"element_id":   "p4-e2",
+						"page":         4,
+						"layout_order": 2,
+						"bbox":         []float64{0.1, 0.2, 0.3, 0.4},
+					},
+				},
+				"page_images": []map[string]interface{}{
+					{
+						"page":        4,
+						"url":         "local://shared/page-4.png",
+						"storage_url": "local://shared/page-4.png",
+					},
+				},
+			},
+			"source_text_hash": "sha256:source-shared",
+			"chunk_text_hash":  "sha256:chunk-shared",
+		},
+	})
+
+	repo := &fakeDeepOfficeChunkLookupRepository{
+		sharedChunks: []*types.Chunk{
+			{
+				ID:              "chunk-shared",
+				TenantID:        77,
+				KnowledgeID:     "knowledge-shared",
+				KnowledgeBaseID: "kb-shared",
+				Content:         "부산광역시 BUSAN METROPOLITAN CITY 작업 현황",
+				ChunkIndex:      10,
+				ChunkType:       types.ChunkTypeText,
+				Metadata:        chunkMetadata,
+			},
+		},
+	}
+	store := &deepOfficeCitationStore{byChunkID: map[string]*deepOfficeEvidenceBinding{}}
+	result := &types.SearchResult{
+		ID:              "chunk-shared",
+		KnowledgeID:     "knowledge-shared",
+		KnowledgeBaseID: "kb-shared",
+		ChunkIndex:      10,
+		Content:         "부산광역시 BUSAN METROPOLITAN CITY 작업 현황",
+	}
+
+	hydrateDeepOfficeCitationStoreFromChunks(context.Background(), store, []*types.SearchResult{result}, repo, 1)
+	enrichDeepOfficeCitationsWithStore([]*types.SearchResult{result}, store)
+
+	if repo.scopedCalls != 1 {
+		t.Fatalf("expected tenant-scoped lookup first, got %d", repo.scopedCalls)
+	}
+	if repo.sharedCalls != 1 {
+		t.Fatalf("expected shared fallback lookup, got %d", repo.sharedCalls)
+	}
+	card := result.DeepOfficeCitation
+	if card == nil {
+		t.Fatal("expected citation card from shared chunk metadata")
+	}
+	parserGrounding := card["parser_grounding"].(map[string]interface{})
+	pages := parserGrounding["pages"].([]int)
+	if len(pages) != 1 || pages[0] != 4 {
+		t.Fatalf("expected page 4 grounding, got %v", pages)
+	}
+	pageImages := parserGrounding["page_images"].([]map[string]interface{})
+	if len(pageImages) != 1 {
+		t.Fatalf("expected page image grounding, got %d", len(pageImages))
+	}
+}
+
 func TestAddDeepOfficeChunkBindingsCompletesMergedInlineSubChunks(t *testing.T) {
 	store := &deepOfficeCitationStore{byChunkID: map[string]*deepOfficeEvidenceBinding{}}
 
@@ -497,6 +609,8 @@ func TestBuildDeepOfficeChunkMetadataMapsGroundingRange(t *testing.T) {
 		"grounding_map": `[{"element_id":"p1-e1","page":1,"layout_order":0,"char_start":0,"char_end":12,"bbox":[0.1,0.2,0.3,0.4]},
 			{"element_id":"p1-e2","page":1,"layout_order":1,"char_start":12,"char_end":24,"bbox":[0.2,0.3,0.4,0.5]},
 			{"element_id":"p2-e1","page":2,"layout_order":0,"char_start":40,"char_end":50,"bbox":[0.5,0.6,0.7,0.8]}]`,
+		"deep_office_page_images": `[{"page":1,"url":"local://7/page-1.png","storage_url":"local://7/page-1.png"},
+			{"page":2,"url":"local://7/page-2.png","storage_url":"local://7/page-2.png"}]`,
 	}
 
 	chunkMetadata := buildDeepOfficeChunkMetadata(metadata, knowledge, chunk)
@@ -516,6 +630,14 @@ func TestBuildDeepOfficeChunkMetadataMapsGroundingRange(t *testing.T) {
 	elements := parserGrounding["elements"].([]interface{})
 	if len(elements) != 2 {
 		t.Fatalf("expected 2 overlapping parser elements, got %d", len(elements))
+	}
+	bboxes := parserGrounding["bboxes"].([]interface{})
+	if len(bboxes) != 2 {
+		t.Fatalf("expected 2 overlapping parser bboxes, got %d", len(bboxes))
+	}
+	pageImages := parserGrounding["page_images"].([]interface{})
+	if len(pageImages) != 1 {
+		t.Fatalf("expected 1 overlapping page image, got %d", len(pageImages))
 	}
 }
 
@@ -539,4 +661,45 @@ func mustJSON(t *testing.T, payload map[string]interface{}) types.JSON {
 		t.Fatalf("marshal json: %v", err)
 	}
 	return types.JSON(raw)
+}
+
+type fakeDeepOfficeChunkLookupRepository struct {
+	scopedChunks []*types.Chunk
+	sharedChunks []*types.Chunk
+	scopedCalls  int
+	sharedCalls  int
+}
+
+func (f *fakeDeepOfficeChunkLookupRepository) ListChunksByID(
+	_ context.Context,
+	_ uint64,
+	ids []string,
+) ([]*types.Chunk, error) {
+	f.scopedCalls++
+	return filterFakeChunksByID(f.scopedChunks, ids), nil
+}
+
+func (f *fakeDeepOfficeChunkLookupRepository) ListChunksByIDOnly(
+	_ context.Context,
+	ids []string,
+) ([]*types.Chunk, error) {
+	f.sharedCalls++
+	return filterFakeChunksByID(f.sharedChunks, ids), nil
+}
+
+func filterFakeChunksByID(chunks []*types.Chunk, ids []string) []*types.Chunk {
+	allowed := map[string]struct{}{}
+	for _, id := range ids {
+		allowed[id] = struct{}{}
+	}
+	var out []*types.Chunk
+	for _, chunk := range chunks {
+		if chunk == nil {
+			continue
+		}
+		if _, ok := allowed[chunk.ID]; ok {
+			out = append(out, chunk)
+		}
+	}
+	return out
 }

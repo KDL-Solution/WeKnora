@@ -30,6 +30,7 @@ DEFAULT_PARSER_ENDPOINT = "http://192.168.20.60:9888/parse/files_new"
 DEFAULT_PARSER_MODE = "ultra_mineru"
 DIRECT_IMAGE_TYPES = {"jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"}
 CONVERTER_TYPES = {"doc", "docx", "ppt", "pptx", "hwp", "hwpx"}
+DEEP_OFFICE_PAGE_IMAGE_REF_PREFIX = "deep-office-page-image://"
 
 
 @dataclass(frozen=True)
@@ -236,9 +237,12 @@ class DeepParserParser(BaseParser):
             "element_count": str(element_count),
             "grounding_map": json.dumps(builder.groundings, ensure_ascii=False, sort_keys=True),
         }
+        page_images, images = _deep_office_page_images(upload_parts)
+        if page_images:
+            metadata["deep_office_page_images"] = json.dumps(page_images, ensure_ascii=False, sort_keys=True)
         if image_source == "converter":
             metadata["converter_endpoint"] = self.converter_endpoint
-        return Document(content=markdown, metadata=metadata)
+        return Document(content=markdown, images=images, metadata=metadata)
 
 
 class _MarkdownGroundingBuilder:
@@ -480,3 +484,35 @@ def _bbox_values(value: Any) -> list[float]:
     if isinstance(value, list):
         return [float(item) for item in value]
     return []
+
+
+def _deep_office_page_images(upload_parts: list[UploadPart]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    records: list[dict[str, Any]] = []
+    images: dict[str, str] = {}
+    for index, part in enumerate(upload_parts, start=1):
+        original_ref = f"{DEEP_OFFICE_PAGE_IMAGE_REF_PREFIX}{index}/{part.filename}"
+        record: dict[str, Any] = {
+            "page": index,
+            "original_ref": original_ref,
+            "filename": part.filename,
+            "mime_type": part.content_type or "image/png",
+            "sha256": "sha256:" + hashlib.sha256(part.content).hexdigest(),
+            "byte_size": len(part.content),
+        }
+        width, height = _image_dimensions(part.content)
+        if width and height:
+            record["width"] = width
+            record["height"] = height
+        records.append(record)
+        images[original_ref] = base64.b64encode(part.content).decode("ascii")
+    return records, images
+
+
+def _image_dimensions(content: bytes) -> tuple[int, int]:
+    try:
+        from PIL import Image
+
+        with Image.open(BytesIO(content)) as image:
+            return int(image.width), int(image.height)
+    except Exception:
+        return 0, 0

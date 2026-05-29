@@ -77,6 +77,8 @@ class DeepParserParserRoutingTest(unittest.TestCase):
 
         self.assertEqual([call[0] for call in parser.calls], ["pdf2image", "deep_parser"])
         self.assertEqual(document.metadata["deep_parser_image_source"], "pdf2image")
+        self.assertIn("deep_office_page_images", document.metadata)
+        self.assertIn("deep-office-page-image://1/doc-p0001.png", document.images)
         self.assertNotIn("converter_endpoint", document.metadata)
 
     def test_office_files_use_converter_before_deep_parser(self):
@@ -86,6 +88,8 @@ class DeepParserParserRoutingTest(unittest.TestCase):
 
         self.assertEqual([call[0] for call in parser.calls], ["converter", "deep_parser"])
         self.assertEqual(document.metadata["deep_parser_image_source"], "converter")
+        self.assertIn("deep_office_page_images", document.metadata)
+        self.assertIn("deep-office-page-image://1/doc-p0001.png", document.images)
         self.assertIn("converter_endpoint", document.metadata)
 
     def test_images_are_converted_to_png_and_sent_directly_to_deep_parser(self):
@@ -99,6 +103,7 @@ class DeepParserParserRoutingTest(unittest.TestCase):
 
         self.assertEqual(parser.calls, [("deep_parser", ["page.png"])])
         self.assertEqual(document.metadata["deep_parser_image_source"], "image_to_png")
+        self.assertIn("deep-office-page-image://1/page.png", document.images)
 
 
 if __name__ == "__main__":

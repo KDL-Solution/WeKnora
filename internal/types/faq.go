@@ -67,11 +67,37 @@ func (c *Chunk) SetDocumentMetadata(meta *DocumentChunkMetadata) error {
 	if c == nil {
 		return nil
 	}
+	merged := map[string]interface{}{}
+	if len(c.Metadata) > 0 {
+		existing, err := c.Metadata.Map()
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			merged = existing
+		}
+	}
 	if meta == nil {
-		c.Metadata = nil
+		delete(merged, "generated_questions")
+		if len(merged) == 0 {
+			c.Metadata = nil
+			return nil
+		}
+		bytes, err := json.Marshal(merged)
+		if err != nil {
+			return err
+		}
+		c.Metadata = JSON(bytes)
 		return nil
 	}
-	bytes, err := json.Marshal(meta)
+
+	if len(meta.GeneratedQuestions) == 0 {
+		delete(merged, "generated_questions")
+	} else {
+		merged["generated_questions"] = meta.GeneratedQuestions
+	}
+
+	bytes, err := json.Marshal(merged)
 	if err != nil {
 		return err
 	}

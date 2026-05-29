@@ -127,6 +127,42 @@ func TestResolveDataURIImages(t *testing.T) {
 	}
 }
 
+func TestResolveAndStoreDeepOfficePageImagesWithoutMarkdownReference(t *testing.T) {
+	png := createTestPNG(200, 150)
+	result := &types.ReadResult{
+		MarkdownContent: "parsed text only",
+		ImageRefs: []types.ImageRef{
+			{
+				Filename:    "page-0001.png",
+				OriginalRef: "deep-office-page-image://1/page-0001.png",
+				MimeType:    "image/png",
+				ImageData:   png,
+			},
+		},
+	}
+	svc := &captureSaveBytes{}
+	r := NewImageResolver()
+	out, imgs, err := r.ResolveAndStore(context.Background(), result, svc, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "parsed text only" {
+		t.Fatalf("markdown should stay unchanged, got %q", out)
+	}
+	if len(imgs) != 1 {
+		t.Fatalf("expected 1 stored page image, got %d", len(imgs))
+	}
+	if imgs[0].OriginalRef != "deep-office-page-image://1/page-0001.png" {
+		t.Fatalf("unexpected original ref: %s", imgs[0].OriginalRef)
+	}
+	if !strings.HasPrefix(imgs[0].ServingURL, "local://test/") {
+		t.Fatalf("unexpected serving url: %s", imgs[0].ServingURL)
+	}
+	if len(svc.saved) != 1 || !bytes.Equal(svc.saved[0], png) {
+		t.Fatal("SaveBytes payload mismatch")
+	}
+}
+
 func TestResolveDataURIImages_CaseInsensitive(t *testing.T) {
 	png := createTestPNG(200, 150)
 	b64 := base64.StdEncoding.EncodeToString(png)

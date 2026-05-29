@@ -44,6 +44,11 @@ type deepOfficeCitationStore struct {
 	byChunkID map[string]*deepOfficeEvidenceBinding
 }
 
+type deepOfficeChunkLookupRepository interface {
+	ListChunksByID(ctx context.Context, tenantID uint64, ids []string) ([]*types.Chunk, error)
+	ListChunksByIDOnly(ctx context.Context, ids []string) ([]*types.Chunk, error)
+}
+
 var (
 	deepOfficeCitationOnce       sync.Once
 	deepOfficeCitationStoreCache *deepOfficeCitationStore
@@ -152,20 +157,22 @@ func hydrateDeepOfficeCitationStoreFromChunks(
 	ctx context.Context,
 	store *deepOfficeCitationStore,
 	results []*types.SearchResult,
-	chunkRepo interfaces.ChunkRepository,
+	chunkRepo deepOfficeChunkLookupRepository,
 	tenantID uint64,
 ) {
-	if store == nil || chunkRepo == nil || tenantID == 0 {
+	if store == nil || chunkRepo == nil {
 		return
 	}
 
 	var ids []string
 	seen := make(map[string]struct{})
+	resultsByChunkID := make(map[string][]*types.SearchResult)
 	for _, result := range results {
 		for _, id := range orderedReferenceChunkIDs(result) {
 			if id == "" {
 				continue
 			}
+			resultsByChunkID[id] = append(resultsByChunkID[id], result)
 			if _, exists := store.byChunkID[id]; exists {
 				continue
 			}
@@ -180,12 +187,37 @@ func hydrateDeepOfficeCitationStoreFromChunks(
 		return
 	}
 
-	chunks, err := chunkRepo.ListChunksByID(ctx, tenantID, ids)
-	if err != nil {
-		logger.Warnf(ctx, "Deep Office chunk evidence hydrate failed: %v", err)
+	found := make(map[string]struct{})
+	if tenantID != 0 {
+		chunks, err := chunkRepo.ListChunksByID(ctx, tenantID, ids)
+		if err != nil {
+			logger.Warnf(ctx, "Deep Office chunk evidence hydrate failed: %v", err)
+		} else {
+			addDeepOfficeChunkBindingsForResults(store, chunks, resultsByChunkID)
+			for _, chunk := range chunks {
+				if chunk != nil && chunk.ID != "" {
+					found[chunk.ID] = struct{}{}
+				}
+			}
+		}
+	}
+
+	var missing []string
+	for _, id := range ids {
+		if _, ok := found[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) == 0 {
 		return
 	}
-	addDeepOfficeChunkBindings(store, chunks)
+
+	chunks, err := chunkRepo.ListChunksByIDOnly(ctx, missing)
+	if err != nil {
+		logger.Warnf(ctx, "Deep Office shared chunk evidence hydrate failed: %v", err)
+		return
+	}
+	addDeepOfficeChunkBindingsForResults(store, chunks, resultsByChunkID)
 }
 
 func addDeepOfficeChunkBindings(store *deepOfficeCitationStore, chunks []*types.Chunk) {
@@ -196,6 +228,29 @@ func addDeepOfficeChunkBindings(store *deepOfficeCitationStore, chunks []*types.
 		store.byChunkID = map[string]*deepOfficeEvidenceBinding{}
 	}
 	for _, chunk := range chunks {
+		binding, ok := deepOfficeBindingFromChunkMetadata(chunk)
+		if !ok || binding.WeknoraChunkID == "" {
+			continue
+		}
+		store.byChunkID[binding.WeknoraChunkID] = binding
+	}
+}
+
+func addDeepOfficeChunkBindingsForResults(
+	store *deepOfficeCitationStore,
+	chunks []*types.Chunk,
+	resultsByChunkID map[string][]*types.SearchResult,
+) {
+	if store == nil {
+		return
+	}
+	if store.byChunkID == nil {
+		store.byChunkID = map[string]*deepOfficeEvidenceBinding{}
+	}
+	for _, chunk := range chunks {
+		if chunk == nil || !deepOfficeChunkMatchesAnyResult(chunk, resultsByChunkID[chunk.ID]) {
+			continue
+		}
 		binding, ok := deepOfficeBindingFromChunkMetadata(chunk)
 		if !ok || binding.WeknoraChunkID == "" {
 			continue
@@ -296,7 +351,32 @@ func deepOfficeBindingMatchesResult(binding *deepOfficeEvidenceBinding, result *
 	if binding == nil || result == nil {
 		return binding != nil
 	}
-	return binding.KnowledgeID == "" || result.KnowledgeID == "" || binding.KnowledgeID == result.KnowledgeID
+	if binding.KnowledgeID != "" && result.KnowledgeID != "" && binding.KnowledgeID != result.KnowledgeID {
+		return false
+	}
+	if binding.KnowledgeBaseID != "" && result.KnowledgeBaseID != "" && binding.KnowledgeBaseID != result.KnowledgeBaseID {
+		return false
+	}
+	return true
+}
+
+func deepOfficeChunkMatchesAnyResult(chunk *types.Chunk, results []*types.SearchResult) bool {
+	if chunk == nil || len(results) == 0 {
+		return false
+	}
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		if result.KnowledgeID != "" && chunk.KnowledgeID != "" && result.KnowledgeID != chunk.KnowledgeID {
+			continue
+		}
+		if result.KnowledgeBaseID != "" && chunk.KnowledgeBaseID != "" && result.KnowledgeBaseID != chunk.KnowledgeBaseID {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func deepOfficeBindingFromResultChunkMetadata(result *types.SearchResult) (*deepOfficeEvidenceBinding, bool) {
@@ -501,41 +581,57 @@ func mergeDeepOfficeParserGrounding(bindings []*deepOfficeEvidenceBinding) map[s
 
 	pages := make(map[int]struct{})
 	elementByID := make(map[string]map[string]interface{})
+	pageImageByPage := make(map[int]map[string]interface{})
 	var elements []map[string]interface{}
 	var bboxes []map[string]interface{}
 
 	for _, binding := range bindings {
 		rawElements, ok := binding.ParserGrounding["elements"].([]interface{})
-		if !ok {
-			continue
+		if ok {
+			for _, rawElement := range rawElements {
+				element, ok := rawElement.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				elementID, _ := element["element_id"].(string)
+				if elementID == "" {
+					continue
+				}
+				if _, seen := elementByID[elementID]; seen {
+					continue
+				}
+
+				copiedElement := cloneInterfaceMap(element)
+				elementByID[elementID] = copiedElement
+				elements = append(elements, copiedElement)
+
+				if page, ok := intFromInterface(element["page"]); ok {
+					pages[page] = struct{}{}
+				}
+				if bbox, ok := element["bbox"].([]interface{}); ok && len(bbox) > 0 {
+					bboxes = append(bboxes, map[string]interface{}{
+						"element_id": elementID,
+						"page":       copiedElement["page"],
+						"bbox":       bbox,
+					})
+				}
+			}
 		}
-		for _, rawElement := range rawElements {
-			element, ok := rawElement.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			elementID, _ := element["element_id"].(string)
-			if elementID == "" {
-				continue
-			}
-			if _, seen := elementByID[elementID]; seen {
-				continue
-			}
-
-			copiedElement := cloneInterfaceMap(element)
-			elementByID[elementID] = copiedElement
-			elements = append(elements, copiedElement)
-
-			if page, ok := intFromInterface(element["page"]); ok {
-				pages[page] = struct{}{}
-			}
-			if bbox, ok := element["bbox"].([]interface{}); ok && len(bbox) > 0 {
-				bboxes = append(bboxes, map[string]interface{}{
-					"element_id": elementID,
-					"page":       copiedElement["page"],
-					"bbox":       bbox,
-				})
+		if rawImages, ok := binding.ParserGrounding["page_images"].([]interface{}); ok {
+			for _, rawImage := range rawImages {
+				image, ok := rawImage.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				page, ok := intFromInterface(image["page"])
+				if !ok || page <= 0 {
+					continue
+				}
+				if _, seen := pageImageByPage[page]; seen {
+					continue
+				}
+				pageImageByPage[page] = cloneInterfaceMap(image)
 			}
 		}
 	}
@@ -560,6 +656,25 @@ func mergeDeepOfficeParserGrounding(bindings []*deepOfficeEvidenceBinding) map[s
 	grounding["pages"] = pageList
 	grounding["elements"] = elements
 	grounding["bboxes"] = bboxes
+	if len(pageImageByPage) > 0 {
+		imagePages := make([]int, 0, len(pageImageByPage))
+		for page := range pageImageByPage {
+			if len(pageList) > 0 {
+				if _, ok := pages[page]; !ok {
+					continue
+				}
+			}
+			imagePages = append(imagePages, page)
+		}
+		sort.Ints(imagePages)
+		pageImages := make([]map[string]interface{}, 0, len(imagePages))
+		for _, page := range imagePages {
+			pageImages = append(pageImages, pageImageByPage[page])
+		}
+		if len(pageImages) > 0 {
+			grounding["page_images"] = pageImages
+		}
+	}
 	return grounding
 }
 

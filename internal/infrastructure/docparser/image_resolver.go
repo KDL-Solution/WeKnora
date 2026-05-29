@@ -35,6 +35,10 @@ const (
 	// minImageBytes is the minimum file size in bytes; very small images are
 	// almost certainly icons or decorative elements.
 	minImageBytes = 512 // 512 bytes
+	// deepOfficePageImageRefPrefix identifies page-render artifacts emitted by
+	// the DeepParser DocReader adapter. These refs may not appear in markdown,
+	// but they still need to be persisted for grounded evidence preview.
+	deepOfficePageImageRefPrefix = "deep-office-page-image://"
 )
 
 // isIconImage returns true if the image data looks like a small icon or
@@ -104,6 +108,10 @@ func (r *ImageResolver) ResolveAndStore(
 	}
 	savedRefs := make(map[string]StoredImage)
 
+	for _, stored := range r.resolveDeepOfficePageImages(ctx, fileSvc, tenantID, refMap, savedRefs) {
+		images = appendStoredImage(images, stored)
+	}
+
 	// Process each image reference found in the markdown.
 	// The URL group supports one level of balanced parentheses so that URLs
 	// like https://example.com/item_(abc)/123 are captured in full.
@@ -141,6 +149,27 @@ func (r *ImageResolver) ResolveAndStore(
 	return markdown, images, nil
 }
 
+func (r *ImageResolver) resolveDeepOfficePageImages(
+	ctx context.Context,
+	fileSvc interfaces.FileService,
+	tenantID uint64,
+	refMap map[string]types.ImageRef,
+	savedRefs map[string]StoredImage,
+) []StoredImage {
+	images := make([]StoredImage, 0)
+	for refPath := range refMap {
+		if !strings.HasPrefix(refPath, deepOfficePageImageRefPrefix) {
+			continue
+		}
+		stored, ok := r.saveReferencedImage(ctx, fileSvc, tenantID, refPath, refMap, savedRefs)
+		if !ok {
+			continue
+		}
+		images = appendStoredImage(images, stored)
+	}
+	return images
+}
+
 func appendStoredImage(images []StoredImage, stored StoredImage) []StoredImage {
 	for _, existing := range images {
 		if existing.OriginalRef == stored.OriginalRef && existing.ServingURL == stored.ServingURL {
@@ -167,7 +196,7 @@ func (r *ImageResolver) saveReferencedImage(
 		return StoredImage{}, false
 	}
 
-	if !ref.IsOriginal && isIconImage(ref.ImageData) {
+	if !ref.IsOriginal && !strings.HasPrefix(refPath, deepOfficePageImageRefPrefix) && isIconImage(ref.ImageData) {
 		return StoredImage{}, false
 	}
 

@@ -28,6 +28,9 @@
             <t-tag v-if="pageLabel" size="small" theme="default" variant="light">
               {{ pageLabel }}
             </t-tag>
+            <t-tag v-if="!hasPageGrounding" size="small" theme="warning" variant="light">
+              페이지 매핑 없음
+            </t-tag>
           </div>
         </div>
 
@@ -38,6 +41,7 @@
           :file-name="fileName"
           :initial-page="primaryPage"
           :pdf-pages="pages"
+          :pdf-page-images="pageImages"
           :pdf-bboxes="bboxes"
           :pdf-elements="elements"
           :active="visibleModel"
@@ -72,6 +76,12 @@
 
         <section class="evidence-section">
           <div class="section-title">문서 위치</div>
+          <div v-if="!hasPageGrounding" class="grounding-missing-note">
+            <t-icon name="info-circle" size="15px" />
+            <span>
+              청크는 참조됐지만 이 청크에 DeepParser 페이지 이미지/bbox metadata가 없습니다. 원문 위치 근거가 필요하면 문서를 DeepParser로 다시 적재해야 합니다.
+            </span>
+          </div>
           <div class="locator-grid">
             <div>
               <span>페이지</span>
@@ -84,6 +94,10 @@
             <div>
               <span>BBox</span>
               <strong>{{ bboxes.length }}</strong>
+            </div>
+            <div>
+              <span>페이지 이미지</span>
+              <strong>{{ pageImages.length }}</strong>
             </div>
             <div>
               <span>RAG 청크</span>
@@ -237,6 +251,13 @@ const pageLabel = computed(() => {
 
 const elements = computed(() => Array.isArray(parserGrounding.value.elements) ? parserGrounding.value.elements : []);
 const bboxes = computed(() => Array.isArray(parserGrounding.value.bboxes) ? parserGrounding.value.bboxes : []);
+const pageImages = computed(() => Array.isArray(parserGrounding.value.page_images) ? parserGrounding.value.page_images : []);
+const hasPageGrounding = computed(() => (
+  pages.value.length > 0
+  || elements.value.length > 0
+  || bboxes.value.length > 0
+  || pageImages.value.length > 0
+));
 const chunkIds = computed(() => Array.isArray(sourceLocator.value.weknora_chunk_ids) ? sourceLocator.value.weknora_chunk_ids : []);
 const chunks = computed(() => Array.isArray(props.group?.chunks) ? props.group.chunks : []);
 const previewElements = computed(() => elements.value.slice(0, 10));
@@ -531,6 +552,26 @@ const graphPathLabel = path => {
     margin-top: 3px;
     color: var(--td-text-color-primary);
     font-size: 13px;
+  }
+}
+
+.grounding-missing-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border: 1px dashed var(--td-warning-color);
+  border-radius: 6px;
+  background: var(--td-warning-color-light);
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
+  line-height: 18px;
+
+  .t-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--td-warning-color);
   }
 }
 

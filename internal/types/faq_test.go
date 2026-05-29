@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -74,6 +75,70 @@ func TestCalculateFAQContentHash_ConsistentViaSetFAQMetadata(t *testing.T) {
 	}
 }
 
+func TestSetDocumentMetadataPreservesExistingChunkMetadata(t *testing.T) {
+	chunk := &Chunk{
+		Metadata: JSON(`{
+			"deep_office_evidence": {
+				"parser_grounding": {
+					"pages": [1],
+					"elements": [{"element_id": "p1-e3"}]
+				}
+			},
+			"source_type": "nas_document"
+		}`),
+	}
+
+	err := chunk.SetDocumentMetadata(&DocumentChunkMetadata{
+		GeneratedQuestions: []GeneratedQuestion{
+			{ID: "q1", Question: "BMT 목적은 무엇인가요?"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetDocumentMetadata failed: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(chunk.Metadata, &got); err != nil {
+		t.Fatalf("metadata is not valid JSON: %v", err)
+	}
+
+	if _, ok := got["deep_office_evidence"]; !ok {
+		t.Fatal("deep_office_evidence was removed")
+	}
+	if got["source_type"] != "nas_document" {
+		t.Fatalf("source_type was not preserved: %v", got["source_type"])
+	}
+	questions, ok := got["generated_questions"].([]interface{})
+	if !ok || len(questions) != 1 {
+		t.Fatalf("generated_questions was not written: %#v", got["generated_questions"])
+	}
+}
+
+func TestSetDocumentMetadataCanRemoveQuestionsWithoutDroppingEvidence(t *testing.T) {
+	chunk := &Chunk{
+		Metadata: JSON(`{
+			"deep_office_evidence": {"parser_grounding": {"pages": [1]}},
+			"generated_questions": [{"id": "q1", "question": "old"}]
+		}`),
+	}
+
+	if err := chunk.SetDocumentMetadata(&DocumentChunkMetadata{}); err != nil {
+		t.Fatalf("SetDocumentMetadata failed: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(chunk.Metadata, &got); err != nil {
+		t.Fatalf("metadata is not valid JSON: %v", err)
+	}
+
+	if _, ok := got["deep_office_evidence"]; !ok {
+		t.Fatal("deep_office_evidence was removed")
+	}
+	if _, ok := got["generated_questions"]; ok {
+		t.Fatal("generated_questions should be removed when empty")
+	}
+}
+
 func TestCalculateFAQContentHash_CaseAndPunctuationInvariant(t *testing.T) {
 	meta1 := &FAQChunkMetadata{
 		StandardQuestion: "Hello World?",
@@ -99,7 +164,7 @@ func TestCalculateFAQContentHash_TraditionalSimplifiedInvariant(t *testing.T) {
 		Answers:          []string{"请联系客服"},
 	}
 	meta2 := &FAQChunkMetadata{
-		StandardQuestion: "如何退款", // simplified
+		StandardQuestion: "如何退款",            // simplified
 		Answers:          []string{"請聯繫客服"}, // traditional in answers — answers only sanitize, not normalize
 	}
 
