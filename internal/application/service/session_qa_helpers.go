@@ -143,7 +143,8 @@ func (s *sessionService) applyAgentOverridesToChatManage(
 		cm.SummaryConfig.MaxCompletionTokens = maxCompletionTokens
 		logger.Infof(ctx, "Using custom agent's max_completion_tokens: %d", maxCompletionTokens)
 	}
-	// Agent-level thinking setting takes full control (no global fallback)
+	// Agent-level thinking setting takes full control (no global fallback),
+	// except builtin quick-answer where hidden reasoning can exhaust the visible answer budget.
 	cm.SummaryConfig.Thinking = customAgent.Config.Thinking
 	if customAgent.ID == types.BuiltinQuickAnswerID {
 		thinking := false
@@ -152,8 +153,8 @@ func (s *sessionService) applyAgentOverridesToChatManage(
 			logger.Warnf(ctx, "Disabling thinking for builtin quick-answer to prevent truncated answers")
 		}
 	}
-	if customAgent.Config.Thinking != nil {
-		logger.Infof(ctx, "Using custom agent's thinking: %v", *customAgent.Config.Thinking)
+	if cm.SummaryConfig.Thinking != nil {
+		logger.Infof(ctx, "Using custom agent's thinking: %v", *cm.SummaryConfig.Thinking)
 	}
 
 	// Override retrieval strategy settings
