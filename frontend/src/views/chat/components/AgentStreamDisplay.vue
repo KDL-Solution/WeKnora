@@ -2537,10 +2537,14 @@ const handleAddToKnowledge = (answerEvent: any) => {
   overflow-y: auto;
 }
 
-// Answer Event - 无边框，直接显示内容
+// Answer Event
 .answer-event {
   animation: fadeInUp 0.25s ease-out;
   min-height: 20px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: min(760px, 100%);
 
   .fallback-icon-btn {
     color: var(--td-text-color-disabled) !important;
@@ -2553,6 +2557,13 @@ const handleAddToKnowledge = (answerEvent: any) => {
   }
 
   .answer-content {
+    display: inline-block;
+    max-width: 100%;
+    padding: 10px 14px;
+    background: #ffffff;
+    border: 1px solid var(--deep-office-border, #e5e7eb);
+    border-radius: 16px 16px 16px 5px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
     font-size: 15px;
     color: var(--td-text-color-primary);
     line-height: 1.6;
