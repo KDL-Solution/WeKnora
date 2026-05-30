@@ -11,6 +11,8 @@ import (
 // Shared QA helpers: KB resolution, model resolution, retrieval tenant
 // ---------------------------------------------------------------------------
 
+const maxAgentCompletionTokens = 8192
+
 // resolveKnowledgeBases resolves the effective knowledge base IDs and knowledge IDs
 // for a QA request. Priority:
 //  1. Explicit @mentions (request-specified kbIDs / knowledgeIDs)
@@ -128,8 +130,18 @@ func (s *sessionService) applyAgentOverridesToChatManage(
 		logger.Infof(ctx, "Using custom agent's temperature: %f", customAgent.Config.Temperature)
 	}
 	if customAgent.Config.MaxCompletionTokens > 0 {
-		cm.SummaryConfig.MaxCompletionTokens = customAgent.Config.MaxCompletionTokens
-		logger.Infof(ctx, "Using custom agent's max_completion_tokens: %d", customAgent.Config.MaxCompletionTokens)
+		maxCompletionTokens := customAgent.Config.MaxCompletionTokens
+		if maxCompletionTokens > maxAgentCompletionTokens {
+			logger.Warnf(
+				ctx,
+				"Clamping custom agent max_completion_tokens from %d to %d",
+				maxCompletionTokens,
+				maxAgentCompletionTokens,
+			)
+			maxCompletionTokens = maxAgentCompletionTokens
+		}
+		cm.SummaryConfig.MaxCompletionTokens = maxCompletionTokens
+		logger.Infof(ctx, "Using custom agent's max_completion_tokens: %d", maxCompletionTokens)
 	}
 	// Agent-level thinking setting takes full control (no global fallback)
 	cm.SummaryConfig.Thinking = customAgent.Config.Thinking

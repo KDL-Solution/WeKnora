@@ -268,7 +268,7 @@
                         <p class="desc">{{ $t('agentEditor.desc.maxTokens') }}</p>
                       </div>
                       <div class="setting-control">
-                        <t-input-number v-model="formData.config.max_completion_tokens" :min="100" :max="100000"
+                        <t-input-number v-model="formData.config.max_completion_tokens" :min="100" :max="8192"
                           :step="100" theme="column" />
                       </div>
                     </div>
