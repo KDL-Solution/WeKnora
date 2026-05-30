@@ -36,3 +36,24 @@ func TestApplyAgentOverridesKeepsSafeMaxCompletionTokens(t *testing.T) {
 		t.Fatalf("MaxCompletionTokens = %d, want 4096", got)
 	}
 }
+
+func TestApplyAgentOverridesDisablesThinkingForBuiltinQuickAnswer(t *testing.T) {
+	enabled := true
+	agent := &types.CustomAgent{
+		ID: types.BuiltinQuickAnswerID,
+		Config: types.CustomAgentConfig{
+			AgentMode: types.AgentModeQuickAnswer,
+			Thinking:  &enabled,
+		},
+	}
+	cm := &types.ChatManage{}
+
+	(&sessionService{}).applyAgentOverridesToChatManage(context.Background(), agent, cm)
+
+	if cm.SummaryConfig.Thinking == nil {
+		t.Fatal("Thinking = nil, want false")
+	}
+	if *cm.SummaryConfig.Thinking {
+		t.Fatal("Thinking = true, want false")
+	}
+}

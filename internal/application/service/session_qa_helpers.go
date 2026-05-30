@@ -145,6 +145,13 @@ func (s *sessionService) applyAgentOverridesToChatManage(
 	}
 	// Agent-level thinking setting takes full control (no global fallback)
 	cm.SummaryConfig.Thinking = customAgent.Config.Thinking
+	if customAgent.ID == types.BuiltinQuickAnswerID {
+		thinking := false
+		cm.SummaryConfig.Thinking = &thinking
+		if customAgent.Config.Thinking != nil && *customAgent.Config.Thinking {
+			logger.Warnf(ctx, "Disabling thinking for builtin quick-answer to prevent truncated answers")
+		}
+	}
 	if customAgent.Config.Thinking != nil {
 		logger.Infof(ctx, "Using custom agent's thinking: %v", *customAgent.Config.Thinking)
 	}
