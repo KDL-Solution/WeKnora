@@ -1548,21 +1548,21 @@ type ModelTestRequest struct {
 	ModelID string `json:"modelId,omitempty"`
 }
 
-// fillSecretsFromStoredModel mutates req in place: if req.ModelID is set
-// and a secret field on the request is empty, the corresponding value from
-// the stored (and decrypted) model is copied in. Non-empty request values
-// are always preferred — they represent the user actively typing a new key
-// they want to verify. Missing or inaccessible model is treated as a no-op
-// (the connection test will fail downstream with a clearer "missing apiKey"
-// error than we could produce here).
+// fillSecretsFromStoredModel mutates req in place: if req.ModelID is set,
+// missing test-only fields are copied from the stored model. Non-empty
+// request values are always preferred — they represent the user actively
+// typing a new key or overriding provider-specific options.
+//
+// Keep non-secret ExtraConfig in this merge path as well. The production
+// remote chat path can use parameters.extra_config.remote_model_name as the
+// actual upstream OpenAI-compatible model id while the stored model name stays
+// a user-facing display label. The connection test must honor that same
+// mapping, otherwise it sends the display label and remote APIs return 404.
+// Missing or inaccessible model is treated as a no-op (the connection test
+// will fail downstream with a clearer "missing apiKey" / upstream error than
+// we could produce here).
 func (h *InitializationHandler) fillSecretsFromStoredModel(ctx context.Context, req *ModelTestRequest) {
 	if req == nil || req.ModelID == "" {
-		return
-	}
-	if req.APIKey != "" {
-		// Already supplied — nothing to merge. (We don't need to look up
-		// AppSecret separately since the WeKnoraCloud path resolves it
-		// from the tenant, not the model record.)
 		return
 	}
 	stored, err := h.modelService.GetModelByID(ctx, req.ModelID)
@@ -1573,6 +1573,16 @@ func (h *InitializationHandler) fillSecretsFromStoredModel(ctx context.Context, 
 	}
 	if req.APIKey == "" {
 		req.APIKey = stored.Parameters.APIKey
+	}
+	if len(stored.Parameters.ExtraConfig) > 0 {
+		if req.ExtraConfig == nil {
+			req.ExtraConfig = map[string]string{}
+		}
+		for key, value := range stored.Parameters.ExtraConfig {
+			if strings.TrimSpace(req.ExtraConfig[key]) == "" {
+				req.ExtraConfig[key] = value
+			}
+		}
 	}
 }
 

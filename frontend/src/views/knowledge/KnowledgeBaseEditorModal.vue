@@ -87,6 +87,23 @@
                             </t-checkbox>
                             <p class="indexing-check-desc">{{ $t('knowledgeEditor.indexing.wikiDesc') }}</p>
                           </div>
+                          <div
+                            class="indexing-check-item"
+                            :class="{ 'is-checked': formData.indexingStrategy.graphEnabled, 'is-disabled': isIndexingLocked }"
+                            @click="toggleGraphIndexing"
+                          >
+                            <t-checkbox
+                              :checked="formData.indexingStrategy.graphEnabled"
+                              :disabled="isIndexingLocked"
+                              class="indexing-check-box"
+                            >
+                              <span class="indexing-check-title">
+                                {{ $t('knowledgeEditor.indexing.graphTitle') }}
+                                <span class="indexing-new-badge">AUTO</span>
+                              </span>
+                            </t-checkbox>
+                            <p class="indexing-check-desc">{{ $t('knowledgeEditor.indexing.graphDesc') }}</p>
+                          </div>
                         </div>
                         <p v-if="isIndexingLocked" class="form-tip locked-tip">
                           {{ $t('knowledgeEditor.indexing.lockedTip') }}
@@ -459,6 +476,62 @@ const defaultDeepOfficeParserEngineRules = () => [
   { file_types: [...DEEP_OFFICE_BUILTIN_DOCREADER_TYPES], engine: BUILTIN_DOCREADER_ENGINE }
 ]
 
+const defaultDeepOfficeGraphExtractConfig = () => ({
+  enabled: true,
+  text:
+    'Deep Office는 Slack, Confluence, Notion, NAS 문서에서 사내 지식을 수집하고 DeepParser와 WeKnora로 검색, Wiki, 지식 그래프를 구축합니다.',
+  tags: ['collects_from', 'uses', 'indexes_with', 'mentions', 'owned_by', 'related_to'],
+  nodes: [
+    { name: 'Deep Office', attributes: [] as string[] },
+    { name: 'Slack', attributes: [] as string[] },
+    { name: 'Confluence', attributes: [] as string[] },
+    { name: 'NAS 문서', attributes: [] as string[] },
+    { name: 'DeepParser', attributes: [] as string[] },
+    { name: 'WeKnora', attributes: [] as string[] }
+  ],
+  relations: [
+    { node1: 'Deep Office', node2: 'Slack', type: 'collects_from' },
+    { node1: 'Deep Office', node2: 'Confluence', type: 'collects_from' },
+    { node1: 'Deep Office', node2: 'NAS 문서', type: 'collects_from' },
+    { node1: 'Deep Office', node2: 'DeepParser', type: 'uses' },
+    { node1: 'Deep Office', node2: 'WeKnora', type: 'indexes_with' }
+  ]
+})
+
+const completeDeepOfficeGraphExtractConfig = (config?: any) => {
+  const fallback = defaultDeepOfficeGraphExtractConfig()
+  return {
+    ...fallback,
+    ...(config || {}),
+    enabled: true,
+    text: config?.text || fallback.text,
+    tags: config?.tags?.length ? config.tags : fallback.tags,
+    nodes: config?.nodes?.length ? config.nodes : fallback.nodes,
+    relations: config?.relations?.length ? config.relations : fallback.relations
+  }
+}
+
+const firstModelIdByType = (type: string): string => {
+  const candidates = allModels.value.filter((model: any) => model.type === type)
+  const selected = candidates.find((model: any) => model.is_default) || candidates[0]
+  return selected?.id || ''
+}
+
+const applyDeepOfficeModelDefaults = () => {
+  if (props.mode !== 'create' || !formData.value) return
+  const llmModelId = firstModelIdByType('KnowledgeQA')
+  const embeddingModelId = firstModelIdByType('Embedding')
+  if (llmModelId && !formData.value.modelConfig.llmModelId) {
+    formData.value.modelConfig.llmModelId = llmModelId
+  }
+  if (embeddingModelId && !formData.value.modelConfig.embeddingModelId) {
+    formData.value.modelConfig.embeddingModelId = embeddingModelId
+  }
+  if (llmModelId && formData.value.indexingStrategy?.wikiEnabled && !formData.value.modelConfig.wikiSynthesisModelId) {
+    formData.value.modelConfig.wikiSynthesisModelId = llmModelId
+  }
+}
+
 const navItems = computed(() => {
   const items: { key: string; icon: string; label: string; badge?: number }[] = [
     { key: 'basic', icon: 'info-circle', label: t('knowledgeEditor.sidebar.basic') },
@@ -551,20 +624,22 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
       modelId: '',
       language: ''
     },
-    nodeExtractConfig: {
-      enabled: false,
-      text: '',
-      tags: [] as string[],
-      nodes: [] as Array<{
-        name: string
-        attributes: string[]
-      }>,
-      relations: [] as Array<{
-        node1: string
-        node2: string
-        type: string
-      }>
-    },
+    nodeExtractConfig: type === 'document'
+      ? defaultDeepOfficeGraphExtractConfig()
+      : {
+          enabled: false,
+          text: '',
+          tags: [] as string[],
+          nodes: [] as Array<{
+            name: string
+            attributes: string[]
+          }>,
+          relations: [] as Array<{
+            node1: string
+            node2: string
+            type: string
+          }>
+        },
     questionGenerationConfig: {
       enabled: true,
       questionCount: 3
@@ -577,8 +652,8 @@ const initFormData = (type: 'document' | 'faq' = 'document') => {
     indexingStrategy: {
       vectorEnabled: true,
       keywordEnabled: true,
-      wikiEnabled: false,
-      graphEnabled: false,
+      wikiEnabled: type === 'document',
+      graphEnabled: type === 'document',
     },
   }
 }
@@ -754,6 +829,16 @@ const toggleWikiIndexing = () => {
   formData.value.indexingStrategy.wikiEnabled = !formData.value.indexingStrategy.wikiEnabled
 }
 
+const toggleGraphIndexing = () => {
+  if (!formData.value) return
+  if (isIndexingLocked.value) return
+  const next = !formData.value.indexingStrategy.graphEnabled
+  formData.value.indexingStrategy.graphEnabled = next
+  formData.value.nodeExtractConfig = next
+    ? completeDeepOfficeGraphExtractConfig(formData.value.nodeExtractConfig)
+    : { ...formData.value.nodeExtractConfig, enabled: false }
+}
+
 const handleChunkingConfigUpdate = (config: any) => {
   if (formData.value) {
     formData.value.chunkingConfig = { ...config }
@@ -827,6 +912,9 @@ const handleQuestionGenerationUpdate = (config: any) => {
 const handleNodeExtractUpdate = (config: any) => {
   if (formData.value) {
     formData.value.nodeExtractConfig = { ...config }
+    if (!isIndexingLocked.value) {
+      formData.value.indexingStrategy.graphEnabled = !!config.enabled
+    }
   }
 }
 
@@ -970,20 +1058,23 @@ const buildSubmitData = () => {
     data.indexing_strategy = {
       vector_enabled: formData.value.indexingStrategy?.vectorEnabled ?? true,
       keyword_enabled: formData.value.indexingStrategy?.keywordEnabled ?? true,
-      wiki_enabled: formData.value.indexingStrategy?.wikiEnabled ?? false,
-      graph_enabled: formData.value.indexingStrategy?.graphEnabled ?? false,
+      wiki_enabled: formData.value.indexingStrategy?.wikiEnabled ?? true,
+      graph_enabled: formData.value.indexingStrategy?.graphEnabled ?? true,
     }
   }
 
   // Always persist extract_config so the toggle state from GraphSettings is saved,
   // regardless of whether the graph indexing strategy is currently enabled.
-  if (formData.value.nodeExtractConfig) {
+  const graphExtractConfig = formData.value.indexingStrategy?.graphEnabled
+    ? completeDeepOfficeGraphExtractConfig(formData.value.nodeExtractConfig)
+    : formData.value.nodeExtractConfig
+  if (graphExtractConfig) {
     data.extract_config = {
-      enabled: !!formData.value.nodeExtractConfig.enabled,
-      text: formData.value.nodeExtractConfig.text || '',
-      tags: formData.value.nodeExtractConfig.tags || [],
-      nodes: formData.value.nodeExtractConfig.nodes || [],
-      relations: formData.value.nodeExtractConfig.relations || []
+      enabled: !!graphExtractConfig.enabled,
+      text: graphExtractConfig.text || '',
+      tags: graphExtractConfig.tags || [],
+      nodes: graphExtractConfig.nodes || [],
+      relations: graphExtractConfig.relations || []
     }
   }
 
@@ -1064,8 +1155,8 @@ const doSubmit = async () => {
         updateConfig.indexing_strategy = {
           vector_enabled: formData.value.indexingStrategy?.vectorEnabled ?? true,
           keyword_enabled: formData.value.indexingStrategy?.keywordEnabled ?? true,
-          wiki_enabled: formData.value.indexingStrategy?.wikiEnabled ?? false,
-          graph_enabled: formData.value.indexingStrategy?.graphEnabled ?? false,
+          wiki_enabled: formData.value.indexingStrategy?.wikiEnabled ?? true,
+          graph_enabled: formData.value.indexingStrategy?.graphEnabled ?? true,
         }
       }
       await updateKnowledgeBase(props.kbId, {
@@ -1217,6 +1308,7 @@ watch(() => props.visible, async (newVal) => {
       // 创建模式：初始化空表单
       formData.value = initFormData(props.initialType || 'document')
       hasFiles.value = false
+      applyDeepOfficeModelDefaults()
     }
   } else {
     // 关闭弹窗时，延迟重置状态（等待动画结束）
@@ -1233,6 +1325,7 @@ watch(
   async (visible, previous) => {
     if (!visible && previous && props.visible) {
       await loadAllModels()
+      applyDeepOfficeModelDefaults()
     }
   }
 )

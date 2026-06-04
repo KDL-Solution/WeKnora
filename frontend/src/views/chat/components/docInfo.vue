@@ -337,11 +337,15 @@ const aggregateGroupCitation = (group) => {
     const evidenceBindingIds = [];
     const chunkEvidence = [];
     const graphEvidences = [];
+    let answerTrace = null;
     let startAt = null;
     let endAt = null;
     let hasPartial = false;
 
     for (const citation of citations) {
+        if (!answerTrace && citation.answer_trace) {
+            answerTrace = citation.answer_trace;
+        }
         if (citation.evidence_status && citation.evidence_status !== 'complete') {
             hasPartial = true;
         }
@@ -424,6 +428,7 @@ const aggregateGroupCitation = (group) => {
         },
         chunk_evidence: chunkEvidence,
         graph_evidence: aggregateGraphEvidence(graphEvidences),
+        answer_trace: answerTrace,
     };
 };
 

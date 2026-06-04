@@ -56,12 +56,17 @@ var (
 )
 
 func enrichDeepOfficeCitations(ctx context.Context, results []*types.SearchResult) {
+	enrichDeepOfficeCitationsWithTrace(ctx, results, "")
+}
+
+func enrichDeepOfficeCitationsWithTrace(ctx context.Context, results []*types.SearchResult, query string) {
 	if len(results) == 0 {
 		return
 	}
 
 	store := deepOfficeCitationStoreForRequest(ctx)
-	enrichDeepOfficeCitationsWithStore(results, store)
+	traceID := deepOfficeAnswerTraceID(query, results)
+	enrichDeepOfficeCitationsWithStoreAndTrace(results, store, query, traceID)
 }
 
 func enrichDeepOfficeCitationsWithChunkRepository(
@@ -70,13 +75,24 @@ func enrichDeepOfficeCitationsWithChunkRepository(
 	chunkRepo interfaces.ChunkRepository,
 	tenantID uint64,
 ) {
+	enrichDeepOfficeCitationsWithChunkRepositoryAndTrace(ctx, results, chunkRepo, tenantID, "")
+}
+
+func enrichDeepOfficeCitationsWithChunkRepositoryAndTrace(
+	ctx context.Context,
+	results []*types.SearchResult,
+	chunkRepo interfaces.ChunkRepository,
+	tenantID uint64,
+	query string,
+) {
 	if len(results) == 0 {
 		return
 	}
 
 	store := deepOfficeCitationStoreForRequest(ctx)
 	hydrateDeepOfficeCitationStoreFromChunks(ctx, store, results, chunkRepo, tenantID)
-	enrichDeepOfficeCitationsWithStore(results, store)
+	traceID := deepOfficeAnswerTraceID(query, results)
+	enrichDeepOfficeCitationsWithStoreAndTrace(results, store, query, traceID)
 }
 
 func deepOfficeCitationStoreForRequest(ctx context.Context) *deepOfficeCitationStore {
@@ -89,15 +105,28 @@ func deepOfficeCitationStoreForRequest(ctx context.Context) *deepOfficeCitationS
 }
 
 func enrichDeepOfficeCitationsWithStore(results []*types.SearchResult, store *deepOfficeCitationStore) {
+	enrichDeepOfficeCitationsWithStoreAndTrace(results, store, "", "")
+}
+
+func enrichDeepOfficeCitationsWithStoreAndTrace(
+	results []*types.SearchResult,
+	store *deepOfficeCitationStore,
+	query string,
+	traceID string,
+) {
 	if store == nil {
 		return
 	}
 
-	for _, result := range results {
+	if traceID == "" {
+		traceID = deepOfficeAnswerTraceID(query, results)
+	}
+
+	for index, result := range results {
 		if result == nil {
 			continue
 		}
-		card := store.cardForResult(result)
+		card := store.cardForResultWithTrace(index+1, result, query, traceID)
 		if len(card) > 0 {
 			result.DeepOfficeCitation = card
 		}
@@ -260,6 +289,15 @@ func addDeepOfficeChunkBindingsForResults(
 }
 
 func (s *deepOfficeCitationStore) cardForResult(result *types.SearchResult) map[string]interface{} {
+	return s.cardForResultWithTrace(1, result, "", "")
+}
+
+func (s *deepOfficeCitationStore) cardForResultWithTrace(
+	rank int,
+	result *types.SearchResult,
+	query string,
+	traceID string,
+) map[string]interface{} {
 	chunkIDs := orderedReferenceChunkIDs(result)
 	if len(chunkIDs) == 0 {
 		return nil
@@ -307,7 +345,240 @@ func (s *deepOfficeCitationStore) cardForResult(result *types.SearchResult) map[
 	if len(result.GraphEvidence) > 0 {
 		card["graph_evidence"] = result.GraphEvidence
 	}
+	if traceID == "" {
+		traceID = deepOfficeAnswerTraceID(query, []*types.SearchResult{result})
+	}
+	card["answer_trace"] = buildDeepOfficeAnswerTrace(traceID, rank, query, result, card)
 	return card
+}
+
+func deepOfficeAnswerTraceID(query string, results []*types.SearchResult) string {
+	parts := []string{strings.TrimSpace(query)}
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		parts = append(
+			parts,
+			result.ID,
+			result.KnowledgeID,
+			result.KnowledgeBaseID,
+			fmt.Sprintf("%d", result.ChunkIndex),
+		)
+		for _, id := range result.SubChunkID {
+			parts = append(parts, id)
+		}
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
+	return "answer-trace:" + fmt.Sprintf("%x", sum[:8])
+}
+
+func buildDeepOfficeAnswerTrace(
+	traceID string,
+	rank int,
+	query string,
+	result *types.SearchResult,
+	card map[string]interface{},
+) map[string]interface{} {
+	if result == nil {
+		return nil
+	}
+
+	queryNodeID := traceID + ":query"
+	retrievalNodeID := traceID + ":retrieval"
+	candidateNodeID := fmt.Sprintf("%s:candidate:%d", traceID, rank)
+	selectedNodeID := fmt.Sprintf("%s:selected:%d", traceID, rank)
+	claimNodeID := fmt.Sprintf("%s:claim:%d", traceID, rank)
+	sourceNodeID := fmt.Sprintf("%s:source:%d", traceID, rank)
+	verdictNodeID := fmt.Sprintf("%s:verdict:%d", traceID, rank)
+
+	evidenceStatus := stringFromMap(card, "evidence_status")
+	if evidenceStatus == "" {
+		evidenceStatus = "metadata"
+	}
+	pages := pagesFromCard(card)
+	chunkIDs := orderedReferenceChunkIDs(result)
+	sourceDocument, _ := card["source_document"].(map[string]interface{})
+	parserGrounding, _ := card["parser_grounding"].(map[string]interface{})
+
+	nodes := []map[string]interface{}{
+		deepOfficeTraceNode(queryNodeID, "query", "질문", map[string]interface{}{
+			"text": query,
+		}),
+		deepOfficeTraceNode(retrievalNodeID, "retrieval_strategy", deepOfficeRetrievalStrategyLabel(result), map[string]interface{}{
+			"knowledge_base_id": result.KnowledgeBaseID,
+			"knowledge_id":      result.KnowledgeID,
+			"match_type":        fmt.Sprintf("%v", result.MatchType),
+		}),
+		deepOfficeTraceNode(candidateNodeID, "candidate_chunk", "후보 청크", map[string]interface{}{
+			"chunk_ids": chunkIDs,
+			"score":     result.Score,
+			"rank":      rank,
+		}),
+		deepOfficeTraceNode(selectedNodeID, "selected_chunk", "선택 청크", map[string]interface{}{
+			"chunk_ids": chunkIDs,
+			"rank":      rank,
+		}),
+		deepOfficeTraceNode(claimNodeID, "answer_claim", "답변 생성에 사용", map[string]interface{}{
+			"content_preview": deepOfficeTruncate(result.Content, 220),
+		}),
+		deepOfficeTraceNode(sourceNodeID, "source_location", deepOfficeSourceTraceLabel(sourceDocument, pages), map[string]interface{}{
+			"source_document": sourceDocument,
+			"pages":           pages,
+			"element_count":   lenInterfaceSlice(parserGrounding["elements"]),
+			"bbox_count":      lenInterfaceSlice(parserGrounding["bboxes"]),
+		}),
+		deepOfficeTraceNode(verdictNodeID, "validation_verdict", deepOfficeTraceVerdictLabel(evidenceStatus), map[string]interface{}{
+			"evidence_status": evidenceStatus,
+			"missing_chunk_ids": func() interface{} {
+				if sourceLocator, ok := card["source_locator"].(map[string]interface{}); ok {
+					return sourceLocator["missing_weknora_chunk_ids"]
+				}
+				return nil
+			}(),
+		}),
+	}
+
+	edges := []map[string]interface{}{
+		deepOfficeTraceEdge(queryNodeID, retrievalNodeID, "searched_by"),
+		deepOfficeTraceEdge(retrievalNodeID, candidateNodeID, "retrieved_by"),
+		deepOfficeTraceEdge(candidateNodeID, selectedNodeID, "reranked_to"),
+		deepOfficeTraceEdge(selectedNodeID, claimNodeID, "used_for"),
+		deepOfficeTraceEdge(claimNodeID, sourceNodeID, "grounded_at"),
+		deepOfficeTraceEdge(sourceNodeID, verdictNodeID, "validated_as"),
+	}
+
+	if len(result.GraphEvidence) > 0 {
+		graphNodeID := fmt.Sprintf("%s:graph:%d", traceID, rank)
+		nodes = append(nodes, deepOfficeTraceNode(graphNodeID, "graph_path", "Graph 경로", map[string]interface{}{
+			"graph_evidence": result.GraphEvidence,
+		}))
+		edges = append(edges,
+			deepOfficeTraceEdge(retrievalNodeID, graphNodeID, "graph_expanded_to"),
+			deepOfficeTraceEdge(graphNodeID, candidateNodeID, "supported_chunk"),
+		)
+	}
+
+	return map[string]interface{}{
+		"trace_id": traceID,
+		"rank":     rank,
+		"nodes":    nodes,
+		"edges":    edges,
+		"summary": map[string]interface{}{
+			"query":              query,
+			"retrieval_strategy": deepOfficeRetrievalStrategyLabel(result),
+			"source_pages":       pages,
+			"evidence_status":    evidenceStatus,
+			"uses_graph_path":    len(result.GraphEvidence) > 0,
+		},
+	}
+}
+
+func deepOfficeTraceNode(id string, nodeType string, label string, data map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"id":    id,
+		"type":  nodeType,
+		"label": label,
+		"data":  data,
+	}
+}
+
+func deepOfficeTraceEdge(from string, to string, label string) map[string]interface{} {
+	return map[string]interface{}{
+		"from":  from,
+		"to":    to,
+		"label": label,
+	}
+}
+
+func deepOfficeRetrievalStrategyLabel(result *types.SearchResult) string {
+	if result == nil {
+		return "knowledge_search"
+	}
+	if len(result.GraphEvidence) > 0 {
+		return "graph_hybrid_search"
+	}
+	if result.MatchType != 0 {
+		return "hybrid_search"
+	}
+	return "knowledge_search"
+}
+
+func deepOfficeSourceTraceLabel(sourceDocument map[string]interface{}, pages []int) string {
+	title, _ := sourceDocument["title"].(string)
+	if title == "" {
+		title = "출처 문서"
+	}
+	if len(pages) == 0 {
+		return title
+	}
+	if len(pages) == 1 {
+		return fmt.Sprintf("%s p.%d", title, pages[0])
+	}
+	return fmt.Sprintf("%s p.%d-%d", title, pages[0], pages[len(pages)-1])
+}
+
+func deepOfficeTraceVerdictLabel(status string) string {
+	switch status {
+	case "complete":
+		return "완전 매핑"
+	case "partial":
+		return "부분 매핑"
+	case "missing_binding":
+		return "근거 매핑 없음"
+	default:
+		return "검수 필요"
+	}
+}
+
+func pagesFromCard(card map[string]interface{}) []int {
+	parserGrounding, ok := card["parser_grounding"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	rawPages := parserGrounding["pages"]
+	switch typed := rawPages.(type) {
+	case []int:
+		return append([]int(nil), typed...)
+	case []interface{}:
+		var pages []int
+		for _, item := range typed {
+			if page, ok := intFromInterface(item); ok && page > 0 {
+				pages = append(pages, page)
+			}
+		}
+		sort.Ints(pages)
+		return pages
+	default:
+		return nil
+	}
+}
+
+func lenInterfaceSlice(value interface{}) int {
+	switch typed := value.(type) {
+	case []interface{}:
+		return len(typed)
+	case []map[string]interface{}:
+		return len(typed)
+	default:
+		return 0
+	}
+}
+
+func stringFromMap(source map[string]interface{}, key string) string {
+	value, _ := source[key].(string)
+	return value
+}
+
+func deepOfficeTruncate(value string, maxLen int) string {
+	text := strings.TrimSpace(strings.Join(strings.Fields(value), " "))
+	if len(text) <= maxLen {
+		return text
+	}
+	if maxLen <= 3 {
+		return text[:maxLen]
+	}
+	return text[:maxLen-3] + "..."
 }
 
 func (s *deepOfficeCitationStore) bindingForChunkID(

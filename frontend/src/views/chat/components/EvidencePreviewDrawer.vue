@@ -121,6 +121,39 @@
           </div>
         </section>
 
+        <section v-if="answerTraceNodes.length" class="evidence-section">
+          <div class="section-title section-title-with-action">
+            <span>검수 그래프</span>
+            <button
+              v-if="canOpenKnowledgeGraph"
+              type="button"
+              class="open-kb-graph-button"
+              @click="openAnswerTraceInKnowledgeGraph"
+            >
+              <t-icon name="chart-bubble" size="13px" />
+              지식베이스 그래프에서 보기
+            </button>
+          </div>
+          <div class="trace-summary">
+            <span>{{ answerTraceSummary }}</span>
+            <code v-if="answerTraceId">{{ shortId(answerTraceId) }}</code>
+          </div>
+          <div class="answer-trace-graph">
+            <template v-for="(node, index) in answerTraceNodes" :key="node.id || index">
+              <div class="trace-node" :class="`trace-node-${node.type || 'default'}`">
+                <span class="trace-node-type">{{ traceNodeTypeLabel(node.type) }}</span>
+                <strong>{{ node.label || traceNodeTypeLabel(node.type) }}</strong>
+                <em v-if="traceNodeSubtitle(node)" :title="traceNodeSubtitle(node)">
+                  {{ traceNodeSubtitle(node) }}
+                </em>
+              </div>
+              <div v-if="index < answerTraceNodes.length - 1" class="trace-edge">
+                <span>{{ traceEdgeLabel(node, answerTraceNodes[index + 1]) }}</span>
+              </div>
+            </template>
+          </div>
+        </section>
+
         <section v-if="graphPaths.length || graphNodes.length" class="evidence-section">
           <div class="section-title">Graph 경로</div>
           <div v-if="graphPaths.length" class="graph-evidence-list">
@@ -186,8 +219,11 @@
 
 <script setup>
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import DeepParserPagePreview from '@/components/deep-parser-page-preview.vue';
 import DocumentPreview from '@/components/document-preview.vue';
+
+const router = useRouter();
 
 const props = defineProps({
   visible: {
@@ -248,6 +284,7 @@ const citation = computed(() => props.group?.citation || {});
 const sourceDocument = computed(() => citation.value.source_document || {});
 const sourceLocator = computed(() => citation.value.source_locator || {});
 const parserGrounding = computed(() => citation.value.parser_grounding || {});
+const answerTrace = computed(() => citation.value.answer_trace || {});
 
 const displayTitle = computed(() => (
   sourceDocument.value.title
@@ -259,6 +296,13 @@ const displayTitle = computed(() => (
 const knowledgeId = computed(() => (
   props.group?.knowledgeId
   || sourceLocator.value.knowledge_id
+  || ''
+));
+
+const knowledgeBaseId = computed(() => (
+  props.group?.knowledgeBaseId
+  || sourceLocator.value.knowledge_base_id
+  || chunks.value.find(chunk => chunk?.knowledge_base_id)?.knowledge_base_id
   || ''
 ));
 
@@ -353,6 +397,33 @@ const graphSupportChunkIds = computed(() => {
   if (!Array.isArray(ids)) return [];
   return ids.map(item => String(item || '')).filter(Boolean);
 });
+const answerTraceNodes = computed(() => {
+  const nodes = answerTrace.value.nodes;
+  if (!Array.isArray(nodes)) return [];
+  return nodes
+    .filter(node => node && typeof node === 'object')
+    .slice(0, 12);
+});
+const answerTraceEdges = computed(() => {
+  const edges = answerTrace.value.edges;
+  if (!Array.isArray(edges)) return [];
+  return edges.filter(edge => edge && typeof edge === 'object');
+});
+const answerTraceId = computed(() => String(answerTrace.value.trace_id || ''));
+const canOpenKnowledgeGraph = computed(() => Boolean(
+  knowledgeBaseId.value
+  && answerTraceId.value
+  && answerTraceNodes.value.length
+));
+const answerTraceSummary = computed(() => {
+  const summary = answerTrace.value.summary || {};
+  const strategy = traceStrategyLabel(summary.retrieval_strategy);
+  const status = evidenceStatusLabel.value || traceStatusLabel(summary.evidence_status);
+  const pagesValue = Array.isArray(summary.source_pages) && summary.source_pages.length
+    ? `p.${compactPageLabel(summary.source_pages.map(page => Number(page)).filter(page => Number.isFinite(page)))}`
+    : '';
+  return [strategy, pagesValue, status].filter(Boolean).join(' / ');
+});
 
 const chunkEvidenceItems = computed(() => chunks.value.map((chunk, index) => {
   const itemCitation = chunk?.deep_office_citation || citation.value;
@@ -437,6 +508,106 @@ const graphPathLabel = path => {
     .map(step => step?.node || step?.relation || '')
     .filter(Boolean)
     .join(' -> ');
+};
+
+const traceEdgeLabel = (fromNode, toNode) => {
+  const edge = answerTraceEdges.value.find(item => item?.from === fromNode?.id && item?.to === toNode?.id);
+  return traceRelationLabel(edge?.label);
+};
+
+const traceNodeTypeLabel = type => {
+  const labels = {
+    query: '질문',
+    retrieval_strategy: '검색',
+    candidate_chunk: '후보',
+    graph_path: '그래프',
+    selected_chunk: '선택',
+    answer_claim: '답변',
+    source_location: '근거',
+    validation_verdict: '검수',
+  };
+  return labels[type] || '단계';
+};
+
+const traceRelationLabel = label => {
+  const labels = {
+    searched_by: '검색',
+    retrieved_by: '후보',
+    graph_expanded_to: '그래프 확장',
+    supported_chunk: '청크 연결',
+    reranked_to: '선택',
+    used_for: '사용',
+    grounded_at: '근거',
+    validated_as: '검수',
+  };
+  return labels[label] || '다음';
+};
+
+const traceStrategyLabel = value => {
+  const labels = {
+    graph_hybrid_search: 'Graph + Hybrid 검색',
+    hybrid_search: 'Hybrid 검색',
+    knowledge_search: '지식 검색',
+  };
+  return labels[value] || String(value || '');
+};
+
+const traceStatusLabel = value => {
+  if (value === 'complete') return '완전 매핑';
+  if (value === 'partial') return '부분 매핑';
+  if (value === 'missing_binding') return '근거 매핑 없음';
+  return value ? String(value) : '';
+};
+
+const traceNodeSubtitle = node => {
+  const data = node?.data || {};
+  if (node?.type === 'query') return truncateText(data.text || '', 60);
+  if (node?.type === 'retrieval_strategy') return traceStrategyLabel(node.label) || data.match_type || '';
+  if (node?.type === 'candidate_chunk' || node?.type === 'selected_chunk') {
+    const chunks = Array.isArray(data.chunk_ids) ? data.chunk_ids : [];
+    const score = typeof data.score === 'number' ? `score ${data.score.toFixed(3)}` : '';
+    return [chunks.length ? `${chunks.length}개 청크` : '', score].filter(Boolean).join(' / ');
+  }
+  if (node?.type === 'answer_claim') return truncateText(data.content_preview || '', 72);
+  if (node?.type === 'source_location') {
+    const pages = Array.isArray(data.pages) ? data.pages : [];
+    const counts = [];
+    if (data.element_count) counts.push(`elements ${data.element_count}`);
+    if (data.bbox_count) counts.push(`bbox ${data.bbox_count}`);
+    return [pages.length ? `p.${compactPageLabel(pages)}` : '', ...counts].filter(Boolean).join(' / ');
+  }
+  if (node?.type === 'validation_verdict') return traceStatusLabel(data.evidence_status);
+  return '';
+};
+
+const openAnswerTraceInKnowledgeGraph = () => {
+  if (!canOpenKnowledgeGraph.value || typeof window === 'undefined') return;
+  const storageKey = [
+    'deep-office-answer-trace',
+    Date.now(),
+    Math.random().toString(36).slice(2, 8),
+  ].join(':');
+  const payload = {
+    title: displayTitle.value,
+    trace: answerTrace.value,
+    source_document: sourceDocument.value,
+    source_locator: sourceLocator.value,
+    parser_grounding: parserGrounding.value,
+  };
+  try {
+    window.sessionStorage.setItem(storageKey, JSON.stringify(payload));
+  } catch (error) {
+    console.error('Failed to persist answer trace graph payload:', error);
+    return;
+  }
+  visibleModel.value = false;
+  router.push({
+    path: `/platform/knowledge-bases/${knowledgeBaseId.value}`,
+    query: {
+      tab: 'graph',
+      answer_trace: storageKey,
+    },
+  });
 };
 </script>
 
@@ -653,6 +824,37 @@ const graphPathLabel = path => {
   font-weight: 700;
 }
 
+.section-title-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.open-kb-graph-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 190px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 6px;
+  color: #1d4ed8;
+  background: var(--td-bg-color-container);
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+
+  &:hover {
+    border-color: #2563eb;
+    color: #1d4ed8;
+    background: #eff6ff;
+  }
+}
+
 .field-row {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);
@@ -829,6 +1031,105 @@ const graphPathLabel = path => {
   margin-top: 8px;
   color: var(--td-text-color-placeholder);
   font-size: 11px;
+}
+
+.trace-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
+
+  code {
+    flex: 0 0 auto;
+    color: var(--td-text-color-placeholder);
+    font-size: 11px;
+  }
+}
+
+.answer-trace-graph {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.trace-node {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 3px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 7px;
+  background: var(--td-bg-color-secondarycontainer);
+
+  strong,
+  em {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    color: var(--td-text-color-primary);
+    font-size: 12px;
+  }
+
+  em {
+    grid-column: 2;
+    color: var(--td-text-color-placeholder);
+    font-size: 11px;
+    font-style: normal;
+  }
+}
+
+.trace-node-type {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #dbeafe;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.trace-node-validation_verdict .trace-node-type {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.trace-node-graph_path .trace-node-type {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.trace-edge {
+  display: flex;
+  justify-content: center;
+  color: var(--td-text-color-placeholder);
+  font-size: 11px;
+
+  span {
+    position: relative;
+    padding: 0 8px;
+
+    &::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 18px;
+      width: 1px;
+      height: 8px;
+      background: var(--td-component-stroke);
+    }
+  }
 }
 
 .chunk-evidence-meta {

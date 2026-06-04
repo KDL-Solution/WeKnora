@@ -89,7 +89,7 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 			}
 		}
 		if chatManage.ImageDescription != "" && !chatManage.ChatModelSupportsVision {
-			userContent += "\n\n[用户上传图片内容]\n" + chatManage.ImageDescription
+			userContent += "\n\n[사용자 업로드 이미지 내용]\n" + chatManage.ImageDescription
 		}
 		if chatManage.QuotedContext != "" {
 			userContent += "\n\n" + chatManage.QuotedContext
@@ -173,7 +173,7 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 	// Append image description as text fallback only when the chat model cannot
 	// process images directly. Vision-capable models see images via MultiContent.
 	if chatManage.ImageDescription != "" && !chatManage.ChatModelSupportsVision {
-		userContent += "\n\n[用户上传图片内容]\n" + chatManage.ImageDescription
+		userContent += "\n\n[사용자 업로드 이미지 내용]\n" + chatManage.ImageDescription
 	}
 	if chatManage.QuotedContext != "" {
 		userContent += "\n\n" + chatManage.QuotedContext

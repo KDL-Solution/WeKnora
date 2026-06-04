@@ -127,7 +127,7 @@ func loadAndProcessHistory(
 			}
 			h.CreateAt = message.CreatedAt
 			if desc := extractImageCaptions(message.Images); desc != "" && message.RenderedContent == "" {
-				h.Query += "\n\n[用户上传图片内容]\n" + desc
+				h.Query += "\n\n[사용자 업로드 이미지 내용]\n" + desc
 			}
 		} else {
 			h.Answer = regThinkTags.ReplaceAllString(message.Content, "")

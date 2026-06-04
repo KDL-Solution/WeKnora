@@ -164,7 +164,7 @@ func (s *sessionService) KnowledgeQA(
 		// Pure chat — no retrieval needed.
 		userContent := req.Query
 		if req.ImageDescription != "" && !chatModelSupportsVision {
-			userContent += "\n\n[用户上传图片内容]\n" + req.ImageDescription
+			userContent += "\n\n[사용자 업로드 이미지 내용]\n" + req.ImageDescription
 		}
 		if req.QuotedContext != "" {
 			userContent += "\n\n" + req.QuotedContext
@@ -220,9 +220,9 @@ func (s *sessionService) KnowledgeQA(
 	if len(chatManage.MergeResult) > 0 {
 		tenantID := req.Session.TenantID
 		if s.chunkService != nil {
-			enrichDeepOfficeCitationsWithChunkRepository(ctx, chatManage.MergeResult, s.chunkService.GetRepository(), tenantID)
+			enrichDeepOfficeCitationsWithChunkRepositoryAndTrace(ctx, chatManage.MergeResult, s.chunkService.GetRepository(), tenantID, req.Query)
 		} else {
-			enrichDeepOfficeCitations(ctx, chatManage.MergeResult)
+			enrichDeepOfficeCitationsWithTrace(ctx, chatManage.MergeResult, req.Query)
 		}
 		logger.Infof(ctx, "Emitting references event with %d results", len(chatManage.MergeResult))
 		if err := eventBus.Emit(ctx, event.Event{
@@ -854,7 +854,7 @@ func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *t
 	})
 
 	if chatManage.ImageDescription != "" && !chatManage.ChatModelSupportsVision {
-		result += "\n\n[用户上传图片内容]\n" + chatManage.ImageDescription
+		result += "\n\n[사용자 업로드 이미지 내용]\n" + chatManage.ImageDescription
 	}
 	if chatManage.QuotedContext != "" {
 		result += "\n\n" + chatManage.QuotedContext

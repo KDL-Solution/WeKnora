@@ -146,6 +146,7 @@ function convertToLegacyFormat(model: ModelConfig) {
     dimension: model.parameters.embedding_parameters?.dimension,
     isBuiltin: model.is_builtin || false,
     supportsVision: model.parameters.supports_vision || false,
+    extraConfig: model.parameters.extra_config || {},
     customHeaders: model.parameters.custom_headers
       ? Object.entries(model.parameters.custom_headers).map(([key, value]) => ({ key, value: String(value) }))
       : [],
@@ -281,6 +282,15 @@ const handleModelSave = async (modelData: any) => {
         }
       }
     }
+    const extraConfigMap = Object.entries(modelData.extraConfig ?? {})
+      .reduce<Record<string, string>>((acc, [key, value]) => {
+        const normalizedKey = key.trim()
+        const normalizedValue = String(value ?? '').trim()
+        if (normalizedKey && normalizedValue) {
+          acc[normalizedKey] = normalizedValue
+        }
+        return acc
+      }, {})
 
     // api_key flows in only on initial create (modelData.apiKey is wiped on
     // every edit-mode open). Edits to existing models commit credentials via
@@ -298,6 +308,7 @@ const handleModelSave = async (modelData: any) => {
         base_url: modelData.baseUrl?.trim() || '',
         ...apiKeyFields,
         provider: modelData.provider || '',
+        ...(Object.keys(extraConfigMap).length > 0 ? { extra_config: extraConfigMap } : {}),
         ...(Object.keys(customHeadersMap).length > 0 ? { custom_headers: customHeadersMap } : {}),
         ...(currentModelType.value === 'embedding' && modelData.dimension ? {
           embedding_parameters: {

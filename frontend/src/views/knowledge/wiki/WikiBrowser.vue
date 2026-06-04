@@ -6,7 +6,7 @@
         <div ref="graphRef" class="wiki-graph-canvas"></div>
 
         <!-- Graph Search Overlay -->
-        <div v-if="graphReady" class="wiki-graph-search-container">
+        <div v-if="graphReady && !isAnswerTraceGraph" class="wiki-graph-search-container">
           <div class="wiki-graph-search-row">
             <div class="wiki-graph-search">
               <t-select
@@ -59,7 +59,7 @@
 
         <!-- Legend Overlay -->
         <div v-if="graphReady" class="wiki-graph-legend" :class="{ 'legend-shifted': graphDrawerVisible }">
-          <div class="legend-items">
+          <div v-if="!isAnswerTraceGraph" class="legend-items">
             <div 
               class="legend-item clickable" 
               :class="{ disabled: !graphFilterTypes.has('summary') }"
@@ -101,6 +101,12 @@
               {{ $t('knowledgeEditor.wikiBrowser.filterComparison') }}
             </div>
           </div>
+          <div v-else class="legend-items trace-legend-items">
+            <div v-for="item in traceLegendTypes" :key="item.type" class="legend-item">
+              <span class="legend-dot" :style="{ background: item.color }"></span>
+              {{ item.label }}
+            </div>
+          </div>
           <div class="legend-divider"></div>
           <div class="legend-actions">
             <div class="legend-action" @click="fitGraphToView" title="Fit to View">
@@ -110,6 +116,14 @@
             <div class="legend-action" @click="toggleArrows">
               <span class="legend-action-icon"><t-icon :name="showArrows ? 'browse-off' : 'browse'" /></span>
               <span>{{ showArrows ? $t('knowledgeEditor.wikiBrowser.hideArrows') : $t('knowledgeEditor.wikiBrowser.showArrows') }}</span>
+            </div>
+            <div
+              v-if="isAnswerTraceGraph"
+              class="legend-action"
+              @click="clearAnswerTraceGraph"
+            >
+              <span class="legend-action-icon"><t-icon name="rollback" /></span>
+              <span>전체 지식그래프</span>
             </div>
             <div
               v-if="graphMode === 'ego' && graphFrontierCount > 0"
@@ -169,7 +183,7 @@
               </t-tag>
               <span class="wiki-reader-meta-text">{{ $t('knowledgeEditor.wikiBrowser.version', { ver: graphDrawerPage.version }) }}</span>
               <t-button
-                v-if="graphMode === 'ego' && graphCenter !== graphDrawerPage.slug"
+                v-if="!isAnswerTraceGraph && graphMode === 'ego' && graphCenter !== graphDrawerPage.slug"
                 size="small"
                 variant="outline"
                 theme="default"
@@ -180,7 +194,7 @@
                 {{ $t('knowledgeEditor.wikiBrowser.bloomNeighbors') }}
               </t-button>
               <t-button
-                v-if="graphMode !== 'ego' || graphCenter !== graphDrawerPage.slug"
+                v-if="!isAnswerTraceGraph && (graphMode !== 'ego' || graphCenter !== graphDrawerPage.slug)"
                 size="small"
                 variant="outline"
                 theme="primary"
@@ -190,7 +204,7 @@
                 {{ $t('knowledgeEditor.wikiBrowser.expandNeighbors') }}
               </t-button>
             </div>
-            <div v-if="graphDrawerNeighborHint" class="wiki-drawer-neighbor-hint" style="margin-bottom: 16px;">
+            <div v-if="!isAnswerTraceGraph && graphDrawerNeighborHint" class="wiki-drawer-neighbor-hint" style="margin-bottom: 16px;">
               {{ graphDrawerNeighborHint }}
             </div>
             <div ref="drawerBodyRef" class="wiki-reader-body" v-html="graphDrawerContent" @click="handleGraphDrawerClick"></div>
@@ -787,6 +801,10 @@ const loading = ref(false)
 const graphLoading = ref(false)
 const graphReady = ref(false)
 const showArrows = ref(true)
+const answerTracePayload = ref<Record<string, any> | null>(null)
+const answerTraceNodeBySlug = ref<Record<string, any>>({})
+const answerTraceEdgeLabelByKey = ref<Record<string, string>>({})
+const isAnswerTraceGraph = computed(() => graphData.value?.meta?.mode === 'answer_trace')
 
 // Graph filtering
 const graphFilterTypes = ref<Set<string>>(new Set(['summary', 'entity', 'concept', 'synthesis', 'comparison', 'index', 'log']))
@@ -1190,10 +1208,32 @@ const graphHelpRows = computed(() => [
   { action: t('knowledgeEditor.wikiBrowser.helpZoomAction'), desc: t('knowledgeEditor.wikiBrowser.helpZoomDesc') },
 ])
 
+const traceLegendTypes = computed(() => {
+  const types = new Set<string>()
+  if (graphData.value?.meta?.mode !== 'answer_trace') return []
+  for (const node of graphData.value.nodes || []) {
+    if (node.page_type) types.add(node.page_type)
+  }
+  return Array.from(types).map(type => ({
+    type,
+    label: getTypeLabel(type),
+    color: nodeColorMap[type] || '#8c8c8c',
+  }))
+})
+
 const graphStatusCard = computed((): { icon: string; title: string; primary: string; secondary: string } | null => {
   const data = graphData.value
   if (!data?.meta) return null
   const meta = data.meta
+  if (meta.mode === 'answer_trace') {
+    const title = answerTracePayload.value?.title || '답변 근거'
+    return {
+      icon: 'chart-bubble',
+      title: '답변 검수 그래프',
+      primary: title,
+      secondary: `${data.nodes.length}개 노드 · ${data.edges.length}개 연결`,
+    }
+  }
   if (meta.mode === 'ego' && meta.center) {
     const centerNode = data.nodes.find(n => n.slug === meta.center)
     const centerTitle = centerNode?.title || meta.center
@@ -1258,6 +1298,31 @@ function renderMarkdown(content: string): string {
 }
 
 async function openGraphDrawer(slug: string) {
+  if (isAnswerTraceGraph.value) {
+    const node = answerTraceNodeBySlug.value[slug]
+    if (!node) return
+    graphDrawerPage.value = {
+      id: slug,
+      tenant_id: 0,
+      knowledge_base_id: props.knowledgeBaseId,
+      slug,
+      title: traceNodeTitle(node, 0),
+      page_type: tracePageType(String(node.type || 'default')),
+      status: 'published',
+      content: traceNodeContent(node, slug),
+      summary: '',
+      aliases: [],
+      source_refs: [],
+      in_links: [],
+      out_links: [],
+      page_metadata: {},
+      version: 1,
+      created_at: '',
+      updated_at: '',
+    } as WikiPage
+    graphDrawerVisible.value = true
+    return
+  }
   try {
     const res = await getWikiPage(props.knowledgeBaseId, slug)
     graphDrawerPage.value = (res as any).data || res as any
@@ -1380,6 +1445,14 @@ function getTypeTheme(type: string): string {
   const map: Record<string, string> = {
     summary: 'primary', entity: 'success', concept: 'warning',
     synthesis: 'primary', comparison: 'danger', index: 'default', log: 'default',
+    trace_query: 'primary',
+    trace_retrieval_strategy: 'primary',
+    trace_candidate_chunk: 'warning',
+    trace_graph_path: 'primary',
+    trace_selected_chunk: 'success',
+    trace_answer_claim: 'primary',
+    trace_source_location: 'warning',
+    trace_validation_verdict: 'success',
   }
   return map[type] || 'default'
 }
@@ -1393,6 +1466,14 @@ function getTypeLabel(type: string): string {
     comparison: t('knowledgeEditor.wikiBrowser.filterComparison'),
     index: 'Index',
     log: 'Log',
+    trace_query: '질문',
+    trace_retrieval_strategy: '검색',
+    trace_candidate_chunk: '후보 청크',
+    trace_graph_path: 'Graph 경로',
+    trace_selected_chunk: '선택 청크',
+    trace_answer_claim: '답변',
+    trace_source_location: '원문 근거',
+    trace_validation_verdict: '검수',
   }
   return map[type] || type
 }
@@ -1908,7 +1989,169 @@ function graphFilterSelectsNothing(): boolean {
   return graphFilterTypes.value.size === 0
 }
 
+function answerTraceKeyFromRoute(): string {
+  const raw = route.query.answer_trace
+  return typeof raw === 'string' ? raw : ''
+}
+
+function asTraceArray(value: any): any[] {
+  return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : []
+}
+
+function tracePageType(nodeType: string): string {
+  const normalized = String(nodeType || 'default').replace(/[^a-zA-Z0-9_]/g, '_')
+  return `trace_${normalized}`
+}
+
+function traceRelationLabel(label: string): string {
+  const labels: Record<string, string> = {
+    searched_by: '검색',
+    retrieved_by: '후보 검색',
+    graph_expanded_to: '그래프 확장',
+    supported_chunk: '청크 연결',
+    reranked_to: '선택',
+    used_for: '답변 사용',
+    grounded_at: '원문 근거',
+    validated_as: '검수',
+  }
+  return labels[label] || label || '연결'
+}
+
+function traceNodeTitle(node: any, index: number): string {
+  const label = String(node?.label || '').trim()
+  if (label) return label
+  return getTypeLabel(tracePageType(String(node?.type || 'default'))) || `Trace ${index + 1}`
+}
+
+function traceNodeContent(node: any, slug: string): string {
+  const type = getTypeLabel(tracePageType(String(node?.type || 'default')))
+  const data = node?.data && typeof node.data === 'object' ? node.data : {}
+  const incoming: string[] = []
+  const outgoing: string[] = []
+  for (const [key, label] of Object.entries(answerTraceEdgeLabelByKey.value)) {
+    const [from, to] = key.split('->')
+    if (to === slug) incoming.push(`${from} -> ${traceRelationLabel(label)}`)
+    if (from === slug) outgoing.push(`${traceRelationLabel(label)} -> ${to}`)
+  }
+  const sections = [
+    `## ${traceNodeTitle(node, 0)}`,
+    `- 유형: ${type}`,
+    incoming.length ? `- 들어오는 연결: ${incoming.join(', ')}` : '',
+    outgoing.length ? `- 나가는 연결: ${outgoing.join(', ')}` : '',
+    '',
+    '```json',
+    JSON.stringify(data, null, 2),
+    '```',
+  ]
+  return sections.filter((line, idx) => idx > 3 || line).join('\n')
+}
+
+function buildAnswerTraceGraphData(payload: Record<string, any>): WikiGraphData | null {
+  const trace = payload?.trace && typeof payload.trace === 'object' ? payload.trace : null
+  const rawNodes = asTraceArray(trace?.nodes)
+  const rawEdges = asTraceArray(trace?.edges)
+  if (!trace || rawNodes.length === 0) return null
+
+  const nodeBySlug: Record<string, any> = {}
+  const seenNodeIDs = new Set<string>()
+  const edges: WikiGraphData['edges'] = []
+  const edgeLabels: Record<string, string> = {}
+  const degreeBySlug = new Map<string, number>()
+
+  const nodes = rawNodes.map((node, index) => {
+    const slug = String(node.id || `answer-trace-node-${index + 1}`)
+    seenNodeIDs.add(slug)
+    nodeBySlug[slug] = node
+    return {
+      slug,
+      title: traceNodeTitle(node, index),
+      page_type: tracePageType(String(node.type || 'default')),
+      link_count: 1,
+    }
+  })
+
+  for (const edge of rawEdges) {
+    const source = String(edge.from || '')
+    const target = String(edge.to || '')
+    if (!source || !target || !seenNodeIDs.has(source) || !seenNodeIDs.has(target)) continue
+    edges.push({ source, target })
+    edgeLabels[`${source}->${target}`] = String(edge.label || '')
+    degreeBySlug.set(source, (degreeBySlug.get(source) || 0) + 1)
+    degreeBySlug.set(target, (degreeBySlug.get(target) || 0) + 1)
+  }
+
+  for (const node of nodes) {
+    node.link_count = Math.max(1, degreeBySlug.get(node.slug) || 0)
+  }
+
+  answerTraceNodeBySlug.value = nodeBySlug
+  answerTraceEdgeLabelByKey.value = edgeLabels
+  return {
+    nodes,
+    edges,
+    meta: {
+      mode: 'answer_trace',
+      total: nodes.length,
+      returned: nodes.length,
+      truncated: false,
+      center: String(trace.trace_id || ''),
+    },
+  }
+}
+
+async function loadAnswerTraceGraphFromRoute(): Promise<boolean> {
+  const key = answerTraceKeyFromRoute()
+  if (!key) {
+    answerTracePayload.value = null
+    answerTraceNodeBySlug.value = {}
+    answerTraceEdgeLabelByKey.value = {}
+    return false
+  }
+  graphLoading.value = true
+  graphReady.value = false
+  try {
+    const raw = typeof window !== 'undefined' ? window.sessionStorage.getItem(key) : ''
+    if (!raw) {
+      MessagePlugin.warning('검수 그래프 데이터를 찾을 수 없어 전체 지식그래프를 엽니다.')
+      return false
+    }
+    const payload = JSON.parse(raw)
+    const traceGraph = buildAnswerTraceGraphData(payload)
+    if (!traceGraph) {
+      MessagePlugin.warning('검수 그래프 데이터가 비어 있어 전체 지식그래프를 엽니다.')
+      return false
+    }
+    answerTracePayload.value = payload
+    graphData.value = traceGraph
+    graphMode.value = 'overview'
+    graphCenter.value = ''
+    graphSelectedSlug.value = null
+    graphHighlightSlug.value = null
+    graphDrawerVisible.value = false
+    setGraphSearchDefaultFromNodes(traceGraph.nodes)
+    resetBloomGenerations(traceGraph.nodes)
+    await nextTick()
+    renderGraph()
+    window.setTimeout(() => fitGraphToView(), 120)
+    return true
+  } catch (error) {
+    console.error('Failed to load answer trace graph:', error)
+    MessagePlugin.warning('검수 그래프를 열지 못해 전체 지식그래프를 엽니다.')
+    return false
+  } finally {
+    graphLoading.value = false
+  }
+}
+
+function clearAnswerTraceGraph() {
+  const query = { ...route.query }
+  delete query.answer_trace
+  query.tab = 'graph'
+  router.replace({ query })
+}
+
 async function loadGraph() {
+  if (await loadAnswerTraceGraphFromRoute()) return
   graphLoading.value = true
   graphReady.value = false
   graphMode.value = 'overview'
@@ -1960,6 +2203,7 @@ async function loadGraph() {
 // download the full graph. Returning to the global top-N view is handled by
 // loadGraph() again.
 async function loadEgoGraph(slug: string, depth = GRAPH_EGO_DEFAULT_DEPTH) {
+  if (isAnswerTraceGraph.value) return
   if (!slug) return
   graphLoading.value = true
   graphReady.value = false
@@ -2032,6 +2276,7 @@ function resetBloomGenerations(nodes: { slug: string }[] | undefined) {
 }
 
 async function loadBloomNeighbors(anchorSlug: string, depth = GRAPH_EGO_DEFAULT_DEPTH) {
+  if (isAnswerTraceGraph.value) return
   if (!anchorSlug) return
   if (!graphData.value) return
   if (graphMode.value !== 'ego') {
@@ -2190,6 +2435,7 @@ function isFrontierCandidate(
 // one click grows the canvas along every branch instead of 100 individual
 // click-by-click iterations.
 async function growFrontier() {
+  if (isAnswerTraceGraph.value) return
   if (!graphData.value) return
   if (graphMode.value !== 'ego') {
     // Frontier expansion only makes sense on top of an ego layout.
@@ -2492,6 +2738,14 @@ const graphSelectedSlug = ref<string | null>(null)
 const nodeColorMap: Record<string, string> = {
   summary: '#0052d9', entity: '#2ba471', concept: '#e37318',
   synthesis: '#0594fa', comparison: '#d54941', index: '#8c8c8c', log: '#8c8c8c',
+  trace_query: '#2563eb',
+  trace_retrieval_strategy: '#0891b2',
+  trace_candidate_chunk: '#d97706',
+  trace_graph_path: '#7c3aed',
+  trace_selected_chunk: '#059669',
+  trace_answer_claim: '#0f172a',
+  trace_source_location: '#dc2626',
+  trace_validation_verdict: '#16a34a',
 }
 
 // RenderGraphOpts tweaks how renderGraph initializes node positions when
@@ -2518,6 +2772,7 @@ function renderGraph(opts: RenderGraphOpts = {}) {
     container.innerHTML = ''
     return
   }
+  const isTraceCanvas = data.meta?.mode === 'answer_trace'
 
   // Stop any previous animation
   if (graphAnimFrame) { cancelAnimationFrame(graphAnimFrame); graphAnimFrame = 0 }
@@ -2745,7 +3000,7 @@ function renderGraph(opts: RenderGraphOpts = {}) {
     const visibleNeighbors = adjacency.get(n.slug)?.size ?? 0
     const hiddenNeighbors = Math.max(0, n.linkCount - visibleNeighbors)
     const isEgoCenter = data.meta?.mode === 'ego' && data.meta.center === n.slug
-    const showExpansionRing = hiddenNeighbors > 0 && !isEgoCenter
+    const showExpansionRing = !isTraceCanvas && hiddenNeighbors > 0 && !isEgoCenter
     const expansionRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
     expansionRing.setAttribute('r', String(r + 3))
     expansionRing.setAttribute('fill', 'none')
@@ -2803,7 +3058,7 @@ function renderGraph(opts: RenderGraphOpts = {}) {
     // painter's algorithm draws it on top; the node-shadow filter and
     // the drawer cover it otherwise.
     let bloomBtn: SVGGElement | null = null
-    const bloomBtnEligible = !isEgoCenter && data.meta?.mode === 'ego' && hiddenNeighbors > 0
+    const bloomBtnEligible = !isTraceCanvas && !isEgoCenter && data.meta?.mode === 'ego' && hiddenNeighbors > 0
     if (bloomBtnEligible) {
       bloomBtn = document.createElementNS('http://www.w3.org/2000/svg', 'g')
       bloomBtn.classList.add('node-bloom-btn')
@@ -2918,7 +3173,7 @@ function renderGraph(opts: RenderGraphOpts = {}) {
     g.addEventListener('click', (e) => {
       e.stopPropagation()
 
-      if (e.shiftKey) {
+      if (e.shiftKey && !isTraceCanvas) {
         // Shift = Bloom. Skip the drawer entirely, skip selection — the
         // user's intent is "bring in the neighbors", not "read this page".
         // Center / isOverview cases are handled inside loadBloomNeighbors
@@ -2957,7 +3212,11 @@ function renderGraph(opts: RenderGraphOpts = {}) {
     g.addEventListener('dblclick', (e) => {
       e.stopPropagation()
       if (pendingSingleClick) { clearTimeout(pendingSingleClick); pendingSingleClick = null }
-      loadEgoGraph(n.slug)
+      if (!isTraceCanvas) {
+        loadEgoGraph(n.slug)
+      } else {
+        openGraphDrawer(n.slug)
+      }
     })
 
     // Drag support
@@ -3573,6 +3832,7 @@ watch(() => props.view, (v) => {
 })
 
 watch(() => route.query.slug, (newSlug) => {
+  if (isAnswerTraceGraph.value) return
   if (newSlug && typeof newSlug === 'string') {
     if (!selectedPage.value || selectedPage.value.slug !== newSlug) {
       if (props.view === 'graph') {
@@ -3582,6 +3842,10 @@ watch(() => route.query.slug, (newSlug) => {
       }
     }
   }
+})
+
+watch(() => route.query.answer_trace, () => {
+  if (props.view === 'graph') loadGraph()
 })
 
 onMounted(() => {

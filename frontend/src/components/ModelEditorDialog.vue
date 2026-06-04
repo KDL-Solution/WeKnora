@@ -274,6 +274,7 @@ interface ModelFormData {
   interfaceType?: 'ollama' | 'openai'
   isDefault: boolean
   supportsVision?: boolean
+  extraConfig?: Record<string, string>
   // 自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）
   customHeaders?: CustomHeaderItem[]
 }
@@ -562,6 +563,7 @@ const formData = ref<ModelFormData>({
   interfaceType: 'ollama',
   isDefault: false,
   supportsVision: false,
+  extraConfig: {},
   customHeaders: []
 })
 
@@ -708,6 +710,7 @@ watch(() => props.visible, (val) => {
       formData.value = {
         ...props.modelData,
         apiKey: '',
+        extraConfig: { ...(props.modelData.extraConfig ?? {}) },
         customHeaders: Array.isArray(props.modelData.customHeaders)
           ? props.modelData.customHeaders.map(h => ({ key: h.key, value: h.value }))
           : []
@@ -746,6 +749,7 @@ const resetForm = () => {
     interfaceType: undefined,
     isDefault: false,
     supportsVision: false,
+    extraConfig: {},
     customHeaders: []
   }
   modelChecked.value = false
@@ -957,16 +961,27 @@ const checkRemoteAPI = async () => {
     const idPayload = isEdit.value && props.modelData?.id
       ? { modelId: props.modelData.id as string }
       : {}
+    const normalizedExtraConfig = Object.entries(formData.value.extraConfig ?? {})
+      .reduce<Record<string, string>>((acc, [key, value]) => {
+        const normalizedKey = key.trim()
+        const normalizedValue = String(value ?? '').trim()
+        if (normalizedKey && normalizedValue) acc[normalizedKey] = normalizedValue
+        return acc
+      }, {})
+    const extraConfigPayload = Object.keys(normalizedExtraConfig).length > 0
+      ? { extraConfig: normalizedExtraConfig }
+      : {}
 
     switch (props.modelType) {
       case 'chat':
         // 对话模型（KnowledgeQA）
         result = await checkRemoteModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: formData.value.baseUrl || '',
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider,
           ...idPayload,
+          ...extraConfigPayload,
           ...headerPayload,
         })
         break
@@ -976,11 +991,12 @@ const checkRemoteAPI = async () => {
         result = await testEmbeddingModel({
           source: 'remote',
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: formData.value.baseUrl || '',
           apiKey: formData.value.apiKey || '',
           dimension: formData.value.dimension,
           provider: formData.value.provider,
           ...idPayload,
+          ...extraConfigPayload,
           ...headerPayload,
         })
         // 如果测试成功且返回了维度，自动填充
@@ -994,10 +1010,11 @@ const checkRemoteAPI = async () => {
         // Rerank 模型
         result = await checkRerankModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: formData.value.baseUrl || '',
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider,
           ...idPayload,
+          ...extraConfigPayload,
           ...headerPayload,
         })
         break
@@ -1007,10 +1024,11 @@ const checkRemoteAPI = async () => {
         // VLLM 使用 checkRemoteModel 进行基础连接测试
         result = await checkRemoteModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: formData.value.baseUrl || '',
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider,
           ...idPayload,
+          ...extraConfigPayload,
           ...headerPayload,
         })
         break
@@ -1019,10 +1037,11 @@ const checkRemoteAPI = async () => {
         // ASR 模型（语音识别）— 使用专用的 ASR 测试接口（/v1/audio/transcriptions）
         result = await checkASRModel({
           modelName: formData.value.modelName,
-          baseUrl: formData.value.baseUrl,
+          baseUrl: formData.value.baseUrl || '',
           apiKey: formData.value.apiKey || '',
           provider: formData.value.provider,
           ...idPayload,
+          ...extraConfigPayload,
           ...headerPayload,
         })
         break

@@ -792,6 +792,13 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 
 	sessionID := reqCtx.sessionID
 
+	if mode == qaModeAgent && h.agentChatModelSupportsVision(streamCtx.asyncCtx, reqCtx) {
+		logger.Infof(streamCtx.asyncCtx,
+			"Skipping pre-agent VLM analysis because the agent chat model supports vision, session: %s",
+			sessionID)
+		return
+	}
+
 	// In normal mode, only run VLM for pure-chat path
 	if mode == qaModeNormal {
 		hasRequestKBs := len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0
@@ -831,9 +838,9 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 	h.analyzeImageAttachments(streamCtx.asyncCtx, reqCtx.images,
 		reqCtx.customAgent.Config.VLMModelID, reqCtx.query)
 
-	outputMsg := "已分析图片内容"
+	outputMsg := "이미지 내용을 분석했습니다"
 	if mode == qaModeAgent {
-		outputMsg = "已查看图片内容"
+		outputMsg = "이미지 내용을 확인했습니다"
 	}
 	streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
 		Type:      event.EventAgentToolResult,
@@ -847,6 +854,34 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 			Iteration:  iteration,
 		},
 	})
+}
+
+func (h *Handler) agentChatModelSupportsVision(ctx context.Context, reqCtx *qaRequestContext) bool {
+	if reqCtx == nil || reqCtx.customAgent == nil {
+		return false
+	}
+
+	modelID := reqCtx.summaryModelID
+	if modelID == "" {
+		modelID = reqCtx.customAgent.Config.ModelID
+	}
+	if modelID == "" {
+		return false
+	}
+
+	lookupCtx := ctx
+	if reqCtx.effectiveTenantID != 0 {
+		lookupCtx = context.WithValue(ctx, types.TenantIDContextKey, reqCtx.effectiveTenantID)
+	}
+
+	model, err := h.modelService.GetModelByID(lookupCtx, modelID)
+	if err != nil || model == nil {
+		if err != nil {
+			logger.Warnf(ctx, "Failed to check agent model vision support for %s: %v", modelID, err)
+		}
+		return false
+	}
+	return model.Parameters.SupportsVision
 }
 
 // persistLastRequestState records the input-bar state the user just sent so

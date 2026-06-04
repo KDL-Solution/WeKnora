@@ -57,3 +57,22 @@ func TestConfigFromModel_RespectsExplicitInterface(t *testing.T) {
 		t.Errorf("expected explicit interface to win, got %q", got)
 	}
 }
+
+func TestNewRemoteAPIVLM_UsesRemoteModelNameOverride(t *testing.T) {
+	model, err := NewRemoteAPIVLM(&Config{
+		ModelID:   "v1",
+		ModelName: "B200 Qwen3.6 27B",
+		BaseURL:   "http://example.com/v1",
+		APIKey:    "sk",
+		Provider:  "generic",
+		Extra: map[string]any{
+			"remote_model_name": "Qwen/Qwen3.6-27B",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRemoteAPIVLM returned error: %v", err)
+	}
+	if got := model.GetModelName(); got != "Qwen/Qwen3.6-27B" {
+		t.Fatalf("expected remote_model_name override, got %q", got)
+	}
+}

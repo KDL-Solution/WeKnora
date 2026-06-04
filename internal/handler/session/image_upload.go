@@ -97,13 +97,13 @@ func (h *Handler) analyzeImageAttachments(ctx context.Context, images []ImageAtt
 // single analysis call that is tailored to the user's intent.
 func buildImageAnalysisPrompt(userQuery string) string {
 	if strings.TrimSpace(userQuery) == "" {
-		return "请分析这张图片的内容。如果包含文字，请提取关键文字信息；如果是自然图片，请描述其主要内容。用简洁的中文回答。"
+		return "이 이미지의 내용을 분석하세요. 이미지에 글자가 있으면 핵심 텍스트를 추출하고, 일반 이미지라면 주요 시각 내용을 설명하세요. 한국어로 간결하게 답변하세요."
 	}
 	return fmt.Sprintf(
-		"用户的问题是：%s\n\n请分析图片中与用户问题相关的内容。"+
-			"如果图片包含文字/文档/表格，请提取与问题相关的关键信息。"+
-			"如果是自然图片/截图/图表，请描述与问题相关的视觉内容。"+
-			"用简洁的中文回答，只输出分析结果。",
+		"사용자 질문: %s\n\n이미지에서 사용자 질문과 관련된 내용을 분석하세요."+
+			"이미지에 텍스트/문서/표가 포함되어 있으면 질문과 관련된 핵심 정보를 추출하세요."+
+			"일반 이미지/스크린샷/차트라면 질문과 관련된 시각적 내용을 설명하세요."+
+			"한국어로 간결하게 답변하고, 분석 결과만 출력하세요.",
 		userQuery,
 	)
 }

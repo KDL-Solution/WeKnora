@@ -187,6 +187,23 @@ func TestEnrichDeepOfficeCitations(t *testing.T) {
 	if len(paths) != 1 {
 		t.Fatalf("expected 1 graph path, got %d", len(paths))
 	}
+
+	answerTrace := card["answer_trace"].(map[string]interface{})
+	if got := answerTrace["trace_id"]; got == "" {
+		t.Fatal("expected answer trace id")
+	}
+	traceSummary := answerTrace["summary"].(map[string]interface{})
+	if got := traceSummary["uses_graph_path"]; got != true {
+		t.Fatalf("expected graph path trace summary, got %v", got)
+	}
+	traceNodes := answerTrace["nodes"].([]map[string]interface{})
+	if len(traceNodes) < 7 {
+		t.Fatalf("expected answer trace nodes, got %d", len(traceNodes))
+	}
+	traceEdges := answerTrace["edges"].([]map[string]interface{})
+	if len(traceEdges) < 6 {
+		t.Fatalf("expected answer trace edges, got %d", len(traceEdges))
+	}
 }
 
 func TestEnrichDeepOfficeCitationsDerivesSummaryFromParentBinding(t *testing.T) {

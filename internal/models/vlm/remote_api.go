@@ -63,8 +63,17 @@ func NewRemoteAPIVLM(config *Config) (*RemoteAPIVLM, error) {
 		apiCfg.HTTPClient = httpClient
 	}
 
+	modelName := strings.TrimSpace(config.ModelName)
+	if config.Extra != nil {
+		if override, ok := config.Extra["remote_model_name"].(string); ok {
+			if override = strings.TrimSpace(override); override != "" {
+				modelName = override
+			}
+		}
+	}
+
 	return &RemoteAPIVLM{
-		modelName: config.ModelName,
+		modelName: modelName,
 		modelID:   config.ModelID,
 		client:    openai.NewClientWithConfig(apiCfg),
 		baseURL:   config.BaseURL,
@@ -74,7 +83,7 @@ func NewRemoteAPIVLM(config *Config) (*RemoteAPIVLM, error) {
 // Predict sends an image with a text prompt to the OpenAI-compatible API.
 func (v *RemoteAPIVLM) Predict(ctx context.Context, imgBytesList [][]byte, prompt string) (string, error) {
 	var parts []openai.ChatMessagePart
-	
+
 	// Add text prompt first
 	parts = append(parts, openai.ChatMessagePart{
 		Type: openai.ChatMessagePartTypeText,

@@ -133,7 +133,7 @@ func buildUserHistoryMessage(m *types.Message) chat.Message {
 	// and image captions would otherwise be invisible to subsequent rounds.
 	if m.RenderedContent == "" {
 		if captions := extractImageCaptionsFromMessage(m.Images); captions != "" {
-			content += "\n\n[用户上传图片内容]\n" + captions
+			content += "\n\n[사용자 업로드 이미지 내용]\n" + captions
 		}
 		if len(m.Attachments) > 0 {
 			content += m.Attachments.BuildPrompt()
